@@ -402,7 +402,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 ### Step 1: Package skeleton, constants and the single header parser
 - **Problem:** Create the uv/hatchling package (`pyproject.toml` modelled on `tripwire/pyproject.toml` with console script `show-your-work = "show_your_work.cli:main"`, extras `dev` and `render` with `mermaidx==0.9.5`), `constants.py` holding every data-shape constant from section 3.3, and `header.py` with `parse_header` implementing the five-field contract (title, Summary, Sources, Not shown, Alt), bullet and unbulleted in-sources continuation, `header-stray-line` outside sources, every-label-clears-sources, unknown-label hard error, CRLF normalization, bounds and absolute-path rejection (section 3.3). Add `cli.py` with `main(argv)` that prints usage and exits 64 for every usage error (unknown verb, unknown flag) by overriding `ArgumentParser.error` (section 4) so the console script is wired from the first step.
 - **Type:** code
-- **Issue:** #
+- **Issue:** #2
 - **Flags:** --reviewers code --isolation worktree
 - **Produces:** `pyproject.toml`, `uv.lock`, `LICENSE`, `src/show_your_work/{__init__,constants,header,cli}.py`, `tests/test_header.py`, `tests/fixtures/bad-headers/*.mmd` (missing-title, missing-summary, missing-sources, missing-not-shown, missing-alt, alt-after-sources, unknown-label, absolute-path, non-ascii)
 - **Done when:** `uv run pytest -q` passes with tests that: parse a valid five-field header into `Header`; fail each `bad-headers` fixture naming the exact field; parse the `alt-after-sources` fixture with `sources` byte-identical to the same header without the Alt line (the sticky-state regression); raise on an unknown label naming it; parse an unbulleted in-sources continuation line as a source and fail a stray non-label line outside sources with `header-stray-line`; a CRLF copy of the valid header parses identically to the LF one; a single-source-of-truth test that can fail: an AST scan of every `src/show_your_work/*.py` except `constants.py` finds no module-level assignment to any budget/bound/field-name constant name, and `header.HEADER_FIELDS is constants.HEADER_FIELDS` on a non-interned tuple (an `is` on small ints is vacuous — they are interned); `uv run show-your-work` and `uv run show-your-work check --bogus` both exit 64 with usage; ruff, ruff format --check and mypy --strict are clean.
@@ -412,7 +412,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 ### Step 2: `check` verb with legibility budget, structure checks and the renderer anchor
 - **Problem:** Implement `checks.py` + `renderer.py` and wire `show-your-work check [TARGET] [--render] [--json]`: top-level (non-recursive) discovery of `*.mmd`, id grammar and case-folded duplicate rejection, excalidraw orphan check, header via `parse_header`, ASCII/abs-path, node/edge label budget from source, subgraph count and balance, and (with `--render`) real mermaid render + exact SVG counts after the garbage anchor renders and raises. Exit 0/1/2 per section 4; human table + `--json` report `show-your-work.report.v1`.
 - **Type:** code
-- **Issue:** #
+- **Issue:** #3
 - **Flags:** --reviewers code --isolation worktree
 - **Produces:** `src/show_your_work/{checks,renderer}.py`, `cli.py` check wiring, `tests/test_checks.py`, `tests/test_cli.py`, `tests/fixtures/garbage/garbage.mmd`, `tests/fixtures/over-budget/*.mmd` (15 nodes, 21 edges, 61-char node label, 41-char edge label, 3 subgraphs, unbalanced end), `tests/fixtures/good/minimal.mmd`
 - **Done when:** through `cli.main([...])` (the production caller): `check tests/fixtures/good` exits 0; `check tests/fixtures/over-budget` exits 1 and the JSON report names every source-checkable budget code (node label, edge label, subgraph count, unbalanced `end`) while the 15-node and 21-edge fixtures report `-` counts plus the NOTE line (section 3.3: counts are exact only under `--render`); `check --render tests/fixtures/over-budget` with a monkeypatched renderer returning SVGs with known node/edge counts (anchor raising correctly) names `budget-nodes` and `budget-edges`; `check tests/fixtures/bad-headers` exits 1; `check <empty dir>` exits 2; `check --render` with a monkeypatched renderer whose garbage render does NOT raise exits 2 before touching any file (anchor watched failing); `check --render` with mermaidx absent exits 2 with the documented message; an `.excalidraw.svg` without a sibling `.mmd` fails with `excalidraw-orphan`; full gate clean.
@@ -422,7 +422,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 ### Step 3: `render` verb — generated README and `workflows.json` index with `--check`
 - **Problem:** Implement `render.py` and `show-your-work render [TARGET] [--check] [--json]`: run checks first and refuse on failure; build `README.md` (section 4 shape, `intro.md` embedded verbatim, GitHub anchor rule) and `workflows.json` (section 3.4, sorted by id, exact key set, `engine` from excalidraw sibling, `source_dir`/`source_path` from the `.git`-ancestor project root, `source_sha256` over CRLF-normalized bytes, `rasters` preserved-or-null per section 3.4, UTC `generated_at`); `--check` compares with `generated_at` masked (and `rasters` masked) and exits 1 when stale.
 - **Type:** code
-- **Issue:** #
+- **Issue:** #4
 - **Flags:** --reviewers deep --isolation worktree
 - **Produces:** `src/show_your_work/render.py`, `cli.py` render wiring, `tests/test_render.py`, `tests/fixtures/good/intro.md`
 - **Done when:** via `cli.main`: `render tests/fixtures/good` (in a tmp copy) writes both files; a second run is byte-identical except `generated_at`; `render --check` exits 0 after a render and 1 after appending a line to a `.mmd`; `workflows.json` validates against a schema test asserting exact item keys, id sort, `schema` string and a `+00:00` offset; the colon-title anchor test passes; `source_path` is identical when `render` runs from two different cwds, and is `docs/workflows/<id>.mmd` for a tmp tree with a `.git` marker at its root; a CRLF and an LF copy of the same `.mmd` produce the same `source_sha256` and README bytes; a plain `render` after hand-placing both raster files keeps that item's `rasters` entry and deletes nothing; `render` on a failing set exits 1 and writes nothing; full gate clean.
@@ -432,7 +432,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 ### Step 4: `init` verb, templates, and dogfooding this repo
 - **Problem:** Implement `scaffold.py` and `show-your-work init [TARGET] [--force]` per DD6 (create dir, copy `templates/workflows/intro.md` and `example-workflow.mmd` only where absent, template-marker-based `--force` using the last-line markers defined in section 3.3, then run check + render). Author the two templates (the example diagram carries all five header fields, passes budget, and ends with the `%% show-your-work:template` marker line). Run `init` on this repo's own `docs/workflows/` and commit the result.
 - **Type:** code
-- **Issue:** #
+- **Issue:** #5
 - **Flags:** --reviewers code --isolation worktree
 - **Produces:** `src/show_your_work/scaffold.py`, `templates/workflows/{intro.md,example-workflow.mmd}`, `cli.py` init wiring, `tests/test_scaffold.py`, `docs/workflows/{intro.md,example-workflow.mmd,README.md,workflows.json}`
 - **Done when:** via `cli.main`: `init <tmp>` on an empty dir exits 0 and leaves `check` and `render --check` both exit 0; a second `init` changes no bytes; `init` with a pre-existing user `intro.md` leaves it untouched; `--force` rewrites a template-origin file and leaves a user `.mmd` untouched; `uv run show-your-work render docs/workflows --check` exits 0 in the repo; full gate clean.
@@ -442,7 +442,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 ### Step 5: Realistic sample fixtures and the read-only live coding-root test
 - **Problem:** The repo is public and the real coding-root diagrams are private (P6), so no real diagram, intro prose or Alt text for them is committed here. (a) Author `tests/fixtures/realistic/`: five SYNTHETIC diagrams on generic topics that reproduce every edge case the real set exhibits — a title containing a colon, a title shaped like a label (`%% Title: ...`), unbulleted `Sources:` continuation lines carrying ` - description` suffixes, a CRLF file (kept CRLF by a `.gitattributes` line `tests/fixtures/realistic/*-crlf.mmd -text`), a `Not shown:` of exactly 400 chars, and a five-bullet `Sources:` list — each with a valid `%% Alt:` line, plus an `intro.md` with a document table. (b) Add `tests/test_live_coding_root.py`: locate the coding root from the main checkout (parent of the directory holding `git rev-parse --path-format=absolute --git-common-dir`'s `.git`, then its parent — never cwd or `__file__`, because a build-step worktree is not a child of `dev/`); when `<coding-root>/docs/workflows/*.mmd` exists, copy it to a tmp dir (never write in place) and run `check` and `render` through `cli.main`; skip with a message when absent. (c) Write `docs/migration-coding-root.md`: the M1 procedure, using paths only (no copied private content).
 - **Type:** code
-- **Issue:** #
+- **Issue:** #6
 - **Flags:** --reviewers code --isolation worktree
 - **Produces:** `tests/fixtures/realistic/*.mmd` (5), `tests/fixtures/realistic/intro.md`, `.gitattributes`, `tests/test_realistic_fixture.py`, `tests/test_live_coding_root.py`, `docs/migration-coding-root.md`
 - **Done when:** `check tests/fixtures/realistic` exits 0 with 5/5 pass; `render` on a tmp copy produces a README whose Contents list has exactly five entries and whose per-diagram sections each contain that fixture's Alt text, with no `Alt:` or `Not shown:` text inside any `Drawn from:` list; a test reads the CRLF fixture's bytes and asserts `\r\n` is present (proves `.gitattributes` kept it); the live test, in the main checkout, discovers >= 1 file and branches on the live state: before M1 (any file lacks `Alt:`) `check` exits 1 with `header-missing-alt` as the ONLY finding code and `render` exits 1 writing nothing to the tmp copy; after M1 both exit 0 — the DONE-gate evidence shows it ran, not skipped; a privacy guard test asserts no file under `tests/fixtures/` equals any live coding-root `.mmd` after Alt-line removal and LF normalization (skips when the live set is absent); full gate clean.
@@ -452,7 +452,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 ### Step 6: `render --png` — light/dark rasters through pinned mermaidx
 - **Problem:** Extend `renderer.py`/`render.py` with `--png`: garbage anchor first; inject the front-matter config (`theme`, `flowchart.wrappingWidth: 400`); render each diagram at `scale = 2` with the opaque per-theme background constants (confirm the dark value `#333333` against the mermaidx bundle's dark theme and record what was found); write `rasters/<id>-{light,dark}.png`; fill `rasters` (path, sha256, width, height, bytes) in `workflows.json`; delete orphan PNGs in `rasters/` under the section 4 safety rules. `--png` without mermaidx exits 2 with the documented message.
 - **Type:** code
-- **Issue:** #
+- **Issue:** #7
 - **Flags:** --reviewers deep --isolation worktree
 - **Produces:** `renderer.py`/`render.py` extensions, `tests/test_png.py` (skipped with a reason when mermaidx is absent; the CI/gate for this step runs with `--extra render`), `constants.py` raster constants
 - **Done when:** with `uv sync --extra dev --extra render`: `render --png` on the `good` fixture writes two PNGs whose IHDR width/height equal `round(2 x` the same renderer's SVG viewBox width/height`)` (host-font independent; not a `>= 1` check); a test asserts the injected block contains `wrappingWidth: 400` and that `scale` and a non-transparent `background` reach `png()`; a monkeypatched renderer whose garbage render does not raise makes `--png` exit 2 and write nothing; a stale `rasters/stray.png` is deleted while a `rasters/notes.txt` and a `rasters/sub/x.png` survive; `workflows.json` `rasters` entries carry hashes equal to the on-disk files; full gate clean including `uv run pytest -q` with the render extra installed.
@@ -462,7 +462,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 ### Step 7: README and utility-project-standard conformance
 - **Problem:** Write `README.md` with every core topic from `utility-project-standard/standard/readme-modules.md` (description, why, install, quick start, verify, supported platforms, license) plus the standalone-cli module; publish a conformance declaration `standalone-cli` / `public` / `experimental`; document the header contract, budget, exit codes, the excalidraw lane and the host-font raster caveat. Write `docs/observatory-amendment.md`, the issue body M2 files: Step 44 satisfied by migration (Alt is required by the one parser), Steps 45-46 consume `workflows.json` + `rasters/` (field-by-field mapping from section 3.4), and every `dev/docs/workflows/check_diagrams.py` / `render_readme.py` / `scripts/render_workflows.py` reference in the Observatory plan listed as stale. Update `CLAUDE.md` Current state.
 - **Type:** code
-- **Issue:** #
+- **Issue:** #8
 - **Flags:** --reviewers code --isolation worktree
 - **Produces:** `README.md`, `docs/observatory-amendment.md`, `CLAUDE.md` update, `utility-project.toml` at the repo root (the checker reads `root / "utility-project.toml"`, `utility-project-standard/src/utility_standard/checker.py:340`; start from `templates/manifests/standalone-cli.toml`)
 - **Done when:** `uv run --project ../utility-project-standard utility-standard check .` exits 0 and `uv run --project ../utility-project-standard utility-standard audit-publication .` reports no findings (public repo, P6; the audit is a read-only scan of tracked files and reachable Git history for absolute paths, usernames, loopback URLs/ports, `.claude/projects` references and secret-shaped path names — `utility-project-standard/standard/publication.md`) (both run from `dev/show-your-work`; the step reads that checker's actual rule set first and quotes the exact manifest path it expects); every command in README is copy-pasted from section 10 and runs; full gate clean.
@@ -473,7 +473,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 
 ### Step M1: Migrate `dev/docs/workflows/` to the standard (coding root becomes the first consumer)
 - **Source step:** Step 5
-- **Issue:** #
+- **Issue:** #9
 - **Commands:**
   Run in: this window @ `dev` · Model: n/a (operator action)
   ```powershell
@@ -510,7 +510,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 <!-- autofix-applied: 2026-10-24 -->
 ### Step M2: File the dev-observatory plan amendment
 - **Source step:** Step 7
-- **Issue:** #
+- **Issue:** #10
 - **Commands:**
   Run in: fresh window @ `dev-observatory` · Model: Opus (default)
   ```powershell
