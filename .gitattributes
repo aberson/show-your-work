@@ -4,3 +4,8 @@ tests/fixtures/garbage/*.mmd text eol=lf
 tests/fixtures/good/*.mmd text eol=lf
 tests/fixtures/over-budget/*.mmd text eol=lf
 tests/fixtures/good/*.md text eol=lf
+# init templates and this repo's dogfooded docs/workflows are copied / compared byte-for-byte.
+templates/workflows/* text eol=lf
+docs/workflows/*.mmd text eol=lf
+docs/workflows/*.md text eol=lf
+docs/workflows/*.json text eol=lf

@@ -440,6 +440,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Produces:** `src/show_your_work/scaffold.py`, `templates/workflows/{intro.md,example-workflow.mmd}`, `cli.py` init wiring, `tests/test_scaffold.py`, `docs/workflows/{intro.md,example-workflow.mmd,README.md,workflows.json}`
 - **Done when:** via `cli.main`: `init <tmp>` on an empty dir exits 0 and leaves `check` and `render --check` both exit 0; a second `init` changes no bytes; `init` with a pre-existing user `intro.md` leaves it untouched; `--force` rewrites a template-origin file and leaves a user `.mmd` untouched; `uv run show-your-work render docs/workflows --check` exits 0 in the repo; full gate clean.
 - **Depends on:** 3
+- **Status:** DONE (2026-10-24)
 
 <!-- autofix-applied: 2026-10-24 -->
 ### Step 5: Realistic sample fixtures and the read-only live coding-root test

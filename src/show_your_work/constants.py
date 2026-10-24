@@ -117,6 +117,39 @@ TEMPLATE_MARKER_MMD: Final = "%% show-your-work:template"
 TEMPLATE_MARKER_MD: Final = "<!-- show-your-work:template -->"
 
 # ---------------------------------------------------------------------------
+# init templates (sections 3.6 and 4, design decision DD6)
+# ---------------------------------------------------------------------------
+
+#: The starter diagram ``init`` copies beside ``intro.md`` (``INTRO_NAME``).
+EXAMPLE_NAME: Final = "example-workflow.mmd"
+
+#: Package-relative directory of the shipped templates (the wheel force-includes the repo's
+#: ``templates/workflows/`` here; see ``pyproject.toml``).
+TEMPLATE_PACKAGE_PARTS: Final[tuple[str, ...]] = tuple(["templates", "workflows"])
+
+#: A file proving a directory is this tool's source checkout (the editable-install fallback
+#: looks for ``templates/workflows/`` only beside it).
+SOURCE_CHECKOUT_MARKER: Final = "pyproject.toml"
+
+#: Largest existing file ``init --force`` reads to look for a template marker; anything larger
+#: is user content by definition and is never replaced.
+MAX_TEMPLATE_BYTES: Final = 64 * 1024
+
+#: Per-file outcome of ``init`` (human output and :class:`scaffold.ScaffoldAction`).
+INIT_CREATED: Final = "created"
+INIT_KEPT: Final = "kept"
+INIT_REPLACED: Final = "replaced"
+
+#: Exit 2 when TARGET (or a parent) cannot be created.
+MSG_CANNOT_CREATE: Final = "cannot create {path}: {reason}"
+#: Exit 2 when the installed package carries no templates (a broken install).
+MSG_TEMPLATES_MISSING: Final = "init templates not found ({name}); reinstall show-your-work"
+#: Printed when the scaffolded set fails check (exit 1; nothing is rendered).
+MSG_INIT_CHECK_FAILED: Final = (
+    "{failed} of {total} file(s) in {path} fail check; fix them, then run 'show-your-work render'"
+)
+
+# ---------------------------------------------------------------------------
 # Legibility budget (section 3.3, values from check_diagrams.py)
 # ---------------------------------------------------------------------------
 
@@ -218,6 +251,12 @@ REPORT_SCHEMA: Final = "show-your-work.report.v1"
 INTRO_NAME: Final = "intro.md"
 README_NAME: Final = "README.md"
 INDEX_NAME: Final = "workflows.json"
+
+#: ``init``'s templates, in copy order: file name -> the last-line marker that makes an existing
+#: file of that name template-origin, so ``init --force`` may replace it (sections 3.3, DD6).
+TEMPLATE_FILES: Final[Mapping[str, str]] = MappingProxyType(
+    {INTRO_NAME: TEMPLATE_MARKER_MD, EXAMPLE_NAME: TEMPLATE_MARKER_MMD}
+)
 
 #: The ``"generator"`` value is ``f"{GENERATOR_NAME} {__version__}"``.
 GENERATOR_NAME: Final = "show-your-work"

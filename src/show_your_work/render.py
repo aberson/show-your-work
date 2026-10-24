@@ -102,6 +102,7 @@ __all__ = [
     "render_dir",
     "serialize_index",
     "source_dir_of",
+    "write_atomic",
 ]
 
 
@@ -538,14 +539,21 @@ def index_up_to_date(existing: str | None, fresh: dict[str, Any], *, mask_raster
 # --- writing -------------------------------------------------------------------------------
 
 
-def _write_atomic(path: Path, text: str) -> None:
-    """Write UTF-8 / LF bytes through a temp file in the same directory and ``os.replace``."""
+def write_atomic(path: Path, text: str, *, mode: int | None = None) -> None:
+    """Write UTF-8 / LF bytes through a temp file in the same directory and ``os.replace``.
+
+    ``os.replace`` swaps the directory entry, so a symlink at ``path`` is replaced, never written
+    through. ``mode`` (permission bits) is applied to the temp file before the swap; without it
+    the file keeps ``mkstemp``'s owner-only mode. Any I/O failure is :class:`GateError` (exit 2).
+    """
     data = text.encode("utf-8")
     tmp: str | None = None
     try:
         fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, path)
         tmp = None
     except OSError as exc:
@@ -598,6 +606,6 @@ def render_dir(target: Path, *, check_only: bool = False) -> RenderResult:
         (index_path, serialize_index(index), index_current),
     ):
         if not current:
-            _write_atomic(path, text)
+            write_atomic(path, text)
         statuses.append(OutputStatus(path.name, STATE_CURRENT if current else STATE_WRITTEN))
     return RenderResult(report, tuple(statuses), EXIT_OK)

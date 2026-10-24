@@ -1,0 +1,15 @@
+%% Example Workflow: Idea to Merged Change
+%% Summary: A starter diagram of how a change moves from an idea through checks and review to a merge; replace it with a real workflow.
+%% Sources:
+%%   - docs/workflows/intro.md
+%%   - https://mermaid.js.org/syntax/flowchart.html
+%% Not shown: release, deployment and rollback; who may approve a review
+%% Alt: Four boxes and one diamond joined left to right by arrows, with an arrow labelled changes requested looping from the review diamond back to the second box.
+
+flowchart LR
+    A[Idea] --> B[Write the change]
+    B --> C[Run the checks]
+    C --> D{Review}
+    D -->|changes requested| B
+    D -->|approved| E[Merge]
+%% show-your-work:template

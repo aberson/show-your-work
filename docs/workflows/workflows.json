@@ -1,0 +1,23 @@
+{
+  "schema": "show-your-work.workflows.v1",
+  "generator": "show-your-work 0.1.0",
+  "generated_at": "2026-10-24T22:19:16+00:00",
+  "source_dir": "docs/workflows",
+  "items": [
+    {
+      "id": "example-workflow",
+      "label": "Example Workflow: Idea to Merged Change",
+      "summary": "A starter diagram of how a change moves from an idea through checks and review to a merge; replace it with a real workflow.",
+      "alt": "Four boxes and one diamond joined left to right by arrows, with an arrow labelled changes requested looping from the review diamond back to the second box.",
+      "not_shown": "release, deployment and rollback; who may approve a review",
+      "sources": [
+        "docs/workflows/intro.md",
+        "https://mermaid.js.org/syntax/flowchart.html"
+      ],
+      "source_path": "docs/workflows/example-workflow.mmd",
+      "source_sha256": "647acd30a273186647d2e8fa0af7daef065bb8230c365b3db2935ac75242056d",
+      "engine": "mermaid",
+      "rasters": null
+    }
+  ]
+}

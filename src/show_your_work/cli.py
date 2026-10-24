@@ -21,7 +21,14 @@ section 4 summary line, with non-ASCII and control characters escaped; ``--json`
 or ``--check`` found a stale output, 2 the gate could not run or an output could not be written).
 It prints the same check report, then one ``<file>: written | up to date | stale`` line per
 generated output (to stderr under ``--json``, so stdout stays pure JSON with ``verb`` render).
-``--png`` exits 2 until build step 6. ``init`` remains a stub until a later step.
+``--png`` exits 2 until build step 6.
+
+``init`` is wired (exit 0 scaffolded, 1 the scaffolded set fails check -- nothing is rendered,
+2 TARGET is a file / cannot be created / a template cannot be read or written). It creates TARGET
+(default ``./docs/workflows``, created when missing), copies the templates only where absent
+(``--force`` replaces template-origin files only, design decision DD6), prints one
+``<file>: created | kept | replaced | up to date`` line per template, then runs ``check`` and
+``render`` on the result and prints the same report and output lines as ``render``.
 """
 
 from __future__ import annotations
@@ -45,6 +52,7 @@ from show_your_work.constants import (
     EXIT_USAGE,
     MAX_ASCII,
     MIN_PRINTABLE,
+    MSG_INIT_CHECK_FAILED,
     MSG_NO_DEFAULT_TARGET,
     MSG_PNG_UNAVAILABLE,
     MSG_RENDER_REFUSED,
@@ -54,7 +62,8 @@ from show_your_work.constants import (
     REPORT_SCHEMA,
     SUMMARY_LINE,
 )
-from show_your_work.render import render_dir
+from show_your_work.render import RenderResult, render_dir
+from show_your_work.scaffold import scaffold
 
 __all__ = ["UsageExitParser", "build_parser", "format_table", "main", "report_json"]
 
@@ -73,11 +82,6 @@ class UsageExitParser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         self.print_usage(sys.stderr)
         self.exit(EXIT_USAGE, f"{self.prog}: error: {message}\n")
-
-
-def _not_implemented(args: argparse.Namespace) -> int:
-    print(f"{PROG} {args.verb}: not implemented yet", file=sys.stderr)
-    return EXIT_GATE
 
 
 def _target_path(raw: str | None) -> Path:
@@ -221,7 +225,6 @@ def _run_render(args: argparse.Namespace) -> int:
     report = result.report
     code = result.exit_code
     _emit_report("render", report, code, as_json=as_json)
-    status = sys.stderr if as_json else sys.stdout
     if result.refused:
         print(
             f"{PROG} render: "
@@ -229,11 +232,41 @@ def _run_render(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return code
-    command = " ".join([PROG, "render", *([args.target] if args.target is not None else [])])
+    _emit_outputs(result, args.target, as_json=as_json)
+    return code
+
+
+def _emit_outputs(result: RenderResult, raw_target: str | None, *, as_json: bool) -> None:
+    """One ``<file>: <state>`` line per generated output, then a hint per stale output."""
+    status = sys.stderr if as_json else sys.stdout
+    command = " ".join([PROG, "render", *([raw_target] if raw_target is not None else [])])
     for output in result.outputs:
         print(f"{output.name}: {output.state}", file=status)
     for name in result.stale:
         print(_ascii(MSG_STALE.format(name=name, command=command)), file=sys.stderr)
+
+
+def _run_init(args: argparse.Namespace) -> int:
+    target = _target_path(args.target)
+    try:
+        actions = scaffold(target, force=args.force)
+        for action in actions:
+            print(f"{action.name}: {action.state}")
+        result = render_dir(target)
+    except GateError as exc:
+        print(f"{PROG} init: {_ascii(exc.message)}", file=sys.stderr)
+        return EXIT_GATE
+
+    report = result.report
+    code = result.exit_code
+    _emit_report("init", report, code, as_json=False)
+    if result.refused:
+        message = MSG_INIT_CHECK_FAILED.format(
+            failed=report.failed, total=report.total, path=target.as_posix()
+        )
+        print(f"{PROG} init: {_ascii(message)}", file=sys.stderr)
+        return code
+    _emit_outputs(result, args.target, as_json=False)
     return code
 
 
@@ -263,7 +296,7 @@ def build_parser() -> UsageExitParser:
     init_parser.add_argument(
         "--force", action="store_true", help="overwrite template-origin files only"
     )
-    init_parser.set_defaults(handler=_not_implemented)
+    init_parser.set_defaults(handler=_run_init)
 
     check_parser = verbs.add_parser("check", help="validate headers, budget and structure")
     _add_target(check_parser)

@@ -27,6 +27,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/show_your_work"]
 
+# The init templates live at the repo root (plan section 3.6) and ship inside the wheel as
+# package data, where scaffold.py finds them through importlib.resources.
+[tool.hatch.build.targets.wheel.force-include]
+"templates/workflows" = "show_your_work/templates/workflows"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
