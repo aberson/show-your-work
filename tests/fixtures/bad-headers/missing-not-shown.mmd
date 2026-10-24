@@ -1,0 +1,11 @@
+%% Release Checklist
+%% Summary: The four gates a release passes in order - tests, changelog, tag, publish - and the one shortcut that is forbidden.
+%% Sources:
+%%   - docs/release.md
+%%   - scripts/release.py
+%% Alt: Four boxes in a horizontal row joined by right-pointing arrows, with one red crossed-out arrow skipping from the first box straight to the last.
+
+flowchart TD
+    A[Tests] --> B[Changelog]
+    B --> C[Tag]
+    C --> D[Publish]

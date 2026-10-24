@@ -1,0 +1,2 @@
+# Header-contract fixtures are byte-exact LF test inputs; never convert them on checkout.
+tests/fixtures/bad-headers/*.mmd text eol=lf
