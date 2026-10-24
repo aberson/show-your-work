@@ -211,6 +211,118 @@ INDEX_SCHEMA: Final = "show-your-work.workflows.v1"
 REPORT_SCHEMA: Final = "show-your-work.report.v1"
 
 # ---------------------------------------------------------------------------
+# Generated outputs: README.md and the workflows.json index (sections 3.1, 3.4 and 4)
+# ---------------------------------------------------------------------------
+
+#: Hand-authored prose the generated README embeds verbatim (optional: omitted when absent).
+INTRO_NAME: Final = "intro.md"
+README_NAME: Final = "README.md"
+INDEX_NAME: Final = "workflows.json"
+
+#: The ``"generator"`` value is ``f"{GENERATOR_NAME} {__version__}"``.
+GENERATOR_NAME: Final = "show-your-work"
+
+#: Top-level ``workflows.json`` keys, in their fixed serialization order (section 3.4).
+INDEX_KEYS: Final[tuple[str, ...]] = tuple(
+    ["schema", "generator", "generated_at", "source_dir", "items"]
+)
+#: The EXACT key set of one ``items[]`` entry, in its fixed order (section 3.4). Unknown or
+#: missing keys are a generator bug.
+INDEX_ITEM_KEYS: Final[tuple[str, ...]] = tuple(
+    [
+        "id",
+        "label",
+        "summary",
+        "alt",
+        "not_shown",
+        "sources",
+        "source_path",
+        "source_sha256",
+        "engine",
+        "rasters",
+    ]
+)
+INDEX_GENERATED_AT: Final = "generated_at"
+INDEX_ITEMS: Final = "items"
+INDEX_ITEM_ID: Final = "id"
+INDEX_ITEM_RASTERS: Final = "rasters"
+
+#: ``engine`` is mermaid unless an ``<id>.excalidraw.svg`` sibling exists (section 3.5).
+ENGINE_MERMAID: Final = "mermaid"
+ENGINE_EXCALIDRAW: Final = "excalidraw"
+
+#: The project root is the nearest ancestor of TARGET holding this file or directory.
+GIT_MARKER: Final = ".git"
+#: ``source_dir`` when TARGET has no ``.git`` ancestor (section 3.4).
+NO_PROJECT_ROOT_DIR: Final = "."
+
+#: Raster layout (section 3.1): ``rasters/<id>-<theme>.png``; one entry per theme, keyed in order.
+RASTERS_DIR: Final = "rasters"
+RASTER_THEMES: Final[tuple[str, ...]] = tuple(["light", "dark"])
+RASTER_FILE: Final = "{id}-{theme}.png"
+#: The exact key set of one ``rasters.<theme>`` entry, in order (section 3.4).
+RASTER_ENTRY_KEYS: Final[tuple[str, ...]] = tuple(["path", "sha256", "width", "height", "bytes"])
+SHA256_HEX_RE: Final = re.compile(r"^[0-9a-f]{64}$")
+
+#: An existing generated file larger than this is never read back; it is simply stale.
+MAX_GENERATED_BYTES: Final = 16 * 1024 * 1024
+
+#: The leading marker of the generated README (section 3.1).
+GENERATED_MARKER: Final = "GENERATED FILE - DO NOT EDIT"
+README_TITLE: Final = "Workflow diagrams"
+README_CONTENTS_HEADING: Final = "Contents"
+README_REGEN_HEADING: Final = "Regenerating"
+README_ALT_LABEL: Final = "**Alt:**"
+README_NOT_SHOWN_LABEL: Final = "**Deliberately not shown:**"
+README_DRAWN_FROM: Final = "Drawn from:"
+README_SOURCE_LABEL: Final = "Source:"
+MERMAID_FENCE_INFO: Final = "mermaid"
+#: Shortest markdown code fence; a longer one is used when the body holds a backtick run.
+MIN_FENCE: Final = 3
+#: Characters GitHub keeps in a heading anchor besides letters and digits (spaces become ``-``).
+ANCHOR_KEEP_CHARS: Final = "-_"
+#: An ATX heading line in ``intro.md`` (its anchor occupies a slug in the README). Group 1 is
+#: the raw content; the optional closing ``#`` sequence is stripped in code (``ATX_MARKER``),
+#: because a lazy capture followed by optional trailing groups backtracks quadratically.
+ATX_HEADING_RE: Final = re.compile(r"^ {0,3}#{1,6}(?:[ \t](.*))?$")
+#: The ATX heading marker character (also the closing-sequence character).
+ATX_MARKER: Final = "#"
+#: A fenced-code delimiter line in ``intro.md`` (headings inside fences are not headings).
+FENCE_LINE_RE: Final = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+#: A setext underline (``===`` / ``---``); under a paragraph line it makes that paragraph a
+#: heading, after a blank line a ``---`` is a thematic break instead.
+SETEXT_UNDERLINE_RE: Final = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+#: A line that opens a list item or block quote (never part of a setext heading's paragraph).
+BLOCK_START_RE: Final = re.compile(r"^ {0,3}(?:[-*+][ \t]|\d{1,9}[.)][ \t]|>)")
+#: Indentation that makes a line outside a paragraph an indented code block.
+INDENTED_CODE_RE: Final = re.compile(r"^(?: {4}|\t)")
+#: An inline link or image; GitHub slugs a heading from its rendered text (group 1). Neither
+#: class may cross its own opening delimiter (``[`` in the text, ``(`` / whitespace in the URL),
+#: so each attempt stops at the next candidate and the scan stays linear on hostile input.
+INLINE_LINK_RE: Final = re.compile(r"!?\[([^\[\]]*)\]\([^()\s]*\)")
+
+#: Per-output outcome of ``render`` (human output and :class:`render.OutputStatus`).
+STATE_WRITTEN: Final = "written"
+STATE_CURRENT: Final = "up to date"
+STATE_STALE: Final = "stale"
+
+#: ``build_index`` refuses a naive or non-UTC ``generated_at`` (section 3.4).
+MSG_STAMP_NOT_UTC: Final = "generated_at must carry a UTC offset of exactly zero"
+
+#: Exit 2 when a generated file cannot be written.
+MSG_CANNOT_WRITE: Final = "cannot write {path}: {reason}"
+#: Exit 2 when ``intro.md`` is not valid UTF-8.
+MSG_INTRO_NOT_UTF8: Final = "cannot read {path}: not valid UTF-8"
+#: Exit 2 when a source changed between ``check`` and ``render`` and no longer parses.
+MSG_SOURCE_CHANGED: Final = "source {path} changed during render and no longer passes check"
+#: Exit 2 until ``render --png`` lands (build step 6).
+MSG_PNG_UNAVAILABLE: Final = "--png is not available yet; run render without --png"
+#: Printed when ``render`` refuses a failing set (exit 1, nothing written).
+MSG_RENDER_REFUSED: Final = "refusing to render: {failed} of {total} file(s) fail check"
+#: Printed per stale generated file under ``render --check``.
+MSG_STALE: Final = "{name} is out of date; run '{command}'"
+
+# ---------------------------------------------------------------------------
 # CLI target resolution and gate messages (section 4)
 # ---------------------------------------------------------------------------
 

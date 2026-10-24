@@ -3,3 +3,4 @@ tests/fixtures/bad-headers/*.mmd text eol=lf
 tests/fixtures/garbage/*.mmd text eol=lf
 tests/fixtures/good/*.mmd text eol=lf
 tests/fixtures/over-budget/*.mmd text eol=lf
+tests/fixtures/good/*.md text eol=lf

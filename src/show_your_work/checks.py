@@ -76,6 +76,7 @@ __all__ = [
     "check_dir",
     "check_source",
     "discover",
+    "read_source",
 ]
 
 
@@ -141,7 +142,7 @@ def _cannot_read(path: Path, exc: OSError) -> GateError:
     return GateError(MSG_CANNOT_READ.format(path=path.as_posix(), reason=reason))
 
 
-def _read_source(path: Path) -> bytes:
+def read_source(path: Path) -> bytes:
     """Read one source, at most ``MAX_SOURCE_BYTES``; any I/O failure or oversize is exit 2."""
     try:
         with path.open("rb") as handle:
@@ -362,7 +363,7 @@ def check_dir(target: Path, *, renderer: Renderer | None = None) -> Report:
     duplicates = _duplicate_findings(sources)
     results: list[FileResult] = []
     for path in sources:
-        result = check_source(path.name, _read_source(path), renderer=renderer)
+        result = check_source(path.name, read_source(path), renderer=renderer)
         extra = duplicates.get(path.name)
         if extra:
             result = FileResult(

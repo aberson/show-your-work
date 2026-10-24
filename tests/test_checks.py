@@ -347,7 +347,7 @@ def test_case_folded_duplicate_ids_are_rejected(
     raw = _diagram().encode("ascii")
     listed = [tmp_path / "Flow.mmd", tmp_path / "flow.mmd", tmp_path / "other.mmd"]
     monkeypatch.setattr(checks, "discover", lambda target: (listed, []))
-    monkeypatch.setattr(checks, "_read_source", lambda path: raw)
+    monkeypatch.setattr(checks, "read_source", lambda path: raw)
     files = _by_file(check_dir(tmp_path))
     assert _codes(files["flow.mmd"]) == [CODE_ID_DUPLICATE]
     assert set(_codes(files["Flow.mmd"])) == {CODE_ID_DUPLICATE, CODE_ID_GRAMMAR}

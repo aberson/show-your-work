@@ -15,7 +15,13 @@ exits ``EXIT_USAGE`` (64): argparse's own default is 2, which would collide with
 an unreadable / symlinked / oversized source). Human output is a fixed-width table plus the
 section 4 summary line, with non-ASCII and control characters escaped; ``--json`` emits
 ``show-your-work.report.v1``. Gate messages are printed to stderr (with ``--json`` a report with
-``exit_code`` 2 still goes to stdout). ``init`` and ``render`` remain stubs until later steps.
+``exit_code`` 2 still goes to stdout).
+
+``render`` is wired (exit 0 written / up to date, 1 the check set fails -- nothing is written --
+or ``--check`` found a stale output, 2 the gate could not run or an output could not be written).
+It prints the same check report, then one ``<file>: written | up to date | stale`` line per
+generated output (to stderr under ``--json``, so stdout stays pure JSON with ``verb`` render).
+``--png`` exits 2 until build step 6. ``init`` remains a stub until a later step.
 """
 
 from __future__ import annotations
@@ -40,11 +46,15 @@ from show_your_work.constants import (
     MAX_ASCII,
     MIN_PRINTABLE,
     MSG_NO_DEFAULT_TARGET,
+    MSG_PNG_UNAVAILABLE,
+    MSG_RENDER_REFUSED,
     MSG_RENDERER_BROKEN,
     MSG_RENDERER_MISSING,
+    MSG_STALE,
     REPORT_SCHEMA,
     SUMMARY_LINE,
 )
+from show_your_work.render import render_dir
 
 __all__ = ["UsageExitParser", "build_parser", "format_table", "main", "report_json"]
 
@@ -174,19 +184,56 @@ def _run_check(args: argparse.Namespace) -> int:
         return EXIT_GATE
 
     code = report.exit_code
+    _emit_report("check", report, code, as_json=as_json)
+    return code
+
+
+def _emit_report(verb: str, report: Report, code: int, *, as_json: bool) -> None:
+    """Print a finished report: JSON on stdout (NOTE on stderr), or table + NOTE + summary."""
     if as_json:
         _emit_json(
-            report_json(
-                "check", report.target, report.files, rendered=report.rendered, exit_code=code
-            )
+            report_json(verb, report.target, report.files, rendered=report.rendered, exit_code=code)
         )
         if not report.rendered:
             print(COUNTS_NOTE, file=sys.stderr)
-        return code
+        return
     print(format_table(report))
     if not report.rendered:
         print(COUNTS_NOTE)
     print(SUMMARY_LINE.format(passed=report.passed, total=report.total))
+
+
+def _run_render(args: argparse.Namespace) -> int:
+    as_json: bool = args.json
+    target = _target_path(args.target)
+    try:
+        if args.target is None and not target.is_dir():
+            raise GateError(MSG_NO_DEFAULT_TARGET.format(path=target.as_posix()))
+        if args.png:
+            raise GateError(MSG_PNG_UNAVAILABLE)
+        result = render_dir(target, check_only=args.check)
+    except GateError as exc:
+        print(f"{PROG} render: {_ascii(exc.message)}", file=sys.stderr)
+        if as_json:
+            _emit_json(report_json("render", target, [], rendered=False, exit_code=EXIT_GATE))
+        return EXIT_GATE
+
+    report = result.report
+    code = result.exit_code
+    _emit_report("render", report, code, as_json=as_json)
+    status = sys.stderr if as_json else sys.stdout
+    if result.refused:
+        print(
+            f"{PROG} render: "
+            + MSG_RENDER_REFUSED.format(failed=report.failed, total=report.total),
+            file=sys.stderr,
+        )
+        return code
+    command = " ".join([PROG, "render", *([args.target] if args.target is not None else [])])
+    for output in result.outputs:
+        print(f"{output.name}: {output.state}", file=status)
+    for name in result.stale:
+        print(_ascii(MSG_STALE.format(name=name, command=command)), file=sys.stderr)
     return code
 
 
@@ -235,7 +282,7 @@ def build_parser() -> UsageExitParser:
         "--png", action="store_true", help="also write light/dark PNG rasters via mermaidx"
     )
     render_parser.add_argument("--json", action="store_true", help="emit a JSON report")
-    render_parser.set_defaults(handler=_not_implemented)
+    render_parser.set_defaults(handler=_run_render)
 
     return parser
 

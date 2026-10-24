@@ -2,8 +2,9 @@
 
 Package-level exports so far: the single header parser (:mod:`show_your_work.header`). Other
 modules: the ``check`` logic in :mod:`show_your_work.checks`, the optional renderer wrapper in
-:mod:`show_your_work.renderer` and the CLI entry point in :mod:`show_your_work.cli`. ``render``
-and ``init`` land in later build steps (``docs/plans/master_plan.md`` section 11).
+:mod:`show_your_work.renderer`, the generated README / ``workflows.json`` builders in
+:mod:`show_your_work.render` and the CLI entry point in :mod:`show_your_work.cli`. ``init`` lands
+in a later build step (``docs/plans/master_plan.md`` section 11).
 """
 
 from __future__ import annotations

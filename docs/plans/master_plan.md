@@ -429,6 +429,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Produces:** `src/show_your_work/render.py`, `cli.py` render wiring, `tests/test_render.py`, `tests/fixtures/good/intro.md`
 - **Done when:** via `cli.main`: `render tests/fixtures/good` (in a tmp copy) writes both files; a second run is byte-identical except `generated_at`; `render --check` exits 0 after a render and 1 after appending a line to a `.mmd`; `workflows.json` validates against a schema test asserting exact item keys, id sort, `schema` string and a `+00:00` offset; the colon-title anchor test passes; `source_path` is identical when `render` runs from two different cwds, and is `docs/workflows/<id>.mmd` for a tmp tree with a `.git` marker at its root; a CRLF and an LF copy of the same `.mmd` produce the same `source_sha256` and README bytes; a plain `render` after hand-placing both raster files keeps that item's `rasters` entry and deletes nothing; `render` on a failing set exits 1 and writes nothing; full gate clean.
 - **Depends on:** 2
+- **Status:** DONE (2026-10-24)
 
 <!-- autofix-applied: 2026-10-24 -->
 ### Step 4: `init` verb, templates, and dogfooding this repo
