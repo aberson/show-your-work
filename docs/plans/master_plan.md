@@ -475,6 +475,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Produces:** `README.md`, `docs/observatory-amendment.md`, `CLAUDE.md` update, `utility-project.toml` at the repo root (the checker reads `root / "utility-project.toml"`, `utility-project-standard/src/utility_standard/checker.py:340`; start from `templates/manifests/standalone-cli.toml`)
 - **Done when:** `uv run --project ../utility-project-standard utility-standard check .` exits 0 and `uv run --project ../utility-project-standard utility-standard audit-publication .` reports no findings (public repo, P6; the audit is a read-only scan of tracked files and reachable Git history for absolute paths, usernames, loopback URLs/ports, `.claude/projects` references and secret-shaped path names — `utility-project-standard/standard/publication.md`) (both run from `dev/show-your-work`; the step reads that checker's actual rule set first and quotes the exact manifest path it expects); every command in README is copy-pasted from section 10 and runs; full gate clean.
 - **Depends on:** 4, 5, 6
+- **Status:** DONE (2026-10-24)
 
 ### Manual Steps
 (These run after /build-phase completes. Operator drives.)

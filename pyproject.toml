@@ -2,6 +2,7 @@
 name = "show-your-work"
 version = "0.1.0"
 description = "Scaffold, validate and render a per-project docs/workflows/ folder of mermaid workflow diagrams."
+readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"

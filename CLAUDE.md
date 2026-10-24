@@ -29,7 +29,8 @@ Shell: PowerShell (primary) on Windows; commands are shell-agnostic via uv.
 - `uv run show-your-work init [TARGET] [--force]` — scaffold a `docs/workflows/` folder
 - `uv run show-your-work check [TARGET] [--render] [--json]` — validate headers, budget, structure
 - `uv run show-your-work render [TARGET] [--check] [--png] [--json]` — regenerate README + index (+ rasters)
-- `uv run --project ../utility-project-standard utility-standard check .` — standard conformance
+- `uv run --project ../utility-project-standard utility-standard check .` — standard conformance (manifest `utility-project.toml`)
+- `uv run --project ../utility-project-standard utility-standard audit-publication .` — public-repo leak audit (tracked files + history)
 
 ## Layout
 
@@ -41,8 +42,11 @@ Shell: PowerShell (primary) on Windows; commands are shell-agnostic via uv.
 - `src/show_your_work/scaffold.py` — `init`
 - `src/show_your_work/cli.py` — argparse, exit codes, `--json`
 - `templates/workflows/` — `intro.md`, `example-workflow.mmd` copied by `init`
+- `tests/` — `test_header`, `test_checks`, `test_render`, `test_scaffold`, `test_cli`, `test_png` (renderer; skips without the `render` extra), `test_realistic_fixture`, `test_live_coding_root` (read-only tmp copy; skips when absent), `test_regex_linear`; `fakes.py` test doubles
 - `tests/fixtures/` — `garbage/`, `bad-headers/`, `over-budget/`, `good/`, `realistic/` (synthetic; the real coding-root diagrams are private and never committed)
 - `docs/workflows/` — this repo's own dogfooded folder
+- `docs/migration-coding-root.md` — M1 procedure; `docs/observatory-amendment.md` — M2 issue body
+- `README.md` + `utility-project.toml` — utility-project-standard conformance (`standalone-cli` / `public` / `experimental`)
 
 ## Architecture
 
@@ -54,13 +58,14 @@ codes: 0 pass, 1 findings or stale, 2 gate could not run, 64 usage.
 
 ## Current state
 
-Plan written 2026-10-24 (`docs/plans/master_plan.md`), no code yet. Next: `/plan-expedite --plan docs/plans/master_plan.md`, then `/build-phase`.
+Automated Steps 1-7 built (2026-10-24): `init` / `check` / `render` (+ `--render`, `--png`), templates, dogfooded `docs/workflows/`, README and standard conformance. Next is the operator handoff in plan order: M1 "Migrate `dev/docs/workflows/` to the standard" (`docs/migration-coding-root.md`), then M2 "File the dev-observatory plan amendment" (`docs/observatory-amendment.md`).
 
 ## Environment
 
 Windows 11 + PowerShell; Python 3.12+ via uv. No network, secrets or services. `mermaidx` only
-when the `render` extra is installed. Rasters are host-font dependent (resvg): hashes differ across
-machines.
+when the `render` extra is installed. Raster hashes are not guaranteed across machines or renderer
+versions (plan risk: host fonts); mermaidx 0.9.5 was observed to skip system fonts and use its bundled
+font, but cross-machine stability is unverified. `render --check` ignores raster hashes unless `--png`.
 
 ## Gotchas
 

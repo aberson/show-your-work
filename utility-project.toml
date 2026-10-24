@@ -1,0 +1,26 @@
+schema_version = 1
+
+[project]
+name = "show-your-work"
+product_shape = "standalone-cli"
+publication_shape = "public"
+maturity = "experimental"
+license_spdx = "MIT"
+
+[readme]
+path = "README.md"
+modules = ["input-output", "exit-codes", "thresholds", "schemas", "scope", "development"]
+
+[commands]
+install = "uv sync --extra dev"
+quickstart = "uv run show-your-work init docs/workflows"
+verify = "uv run pytest -q"
+
+[publication]
+overlay_strategy = "none"
+remote_audit = false
+
+[[platform]]
+name = "Windows 11 (Python 3.12+, uv)"
+verification_state = "verified"
+evidence = "tests/test_cli.py"
