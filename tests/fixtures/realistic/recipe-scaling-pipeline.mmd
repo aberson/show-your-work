@@ -1,0 +1,20 @@
+%% Recipe Scaling Pipeline
+%% Summary: Turning a family recipe into a batch plan for a bakery, from unit conversion to the prep list.
+%% Sources:
+%%   - docs/bakery/recipes.md
+%%   - docs/bakery/units.md
+%%   - docs/bakery/yield-tables.md
+%%   - docs/bakery/prep-list.md
+%%   - https://example.com/baker-percentages
+%% Not shown: costing, allergen labelling, oven scheduling
+%% Alt: A top-to-bottom pipeline of five steps grouped in two panels, conversion and planning, ending at a printed prep list.
+
+flowchart TD
+    subgraph convert[Conversion]
+        A[Read home recipe] --> B[Convert to grams]
+        B --> C[Express as baker percent]
+    end
+    subgraph plan[Planning]
+        D[Multiply to batch size] --> E[Print prep list]
+    end
+    C --> D

@@ -451,6 +451,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Produces:** `tests/fixtures/realistic/*.mmd` (5), `tests/fixtures/realistic/intro.md`, `.gitattributes`, `tests/test_realistic_fixture.py`, `tests/test_live_coding_root.py`, `docs/migration-coding-root.md`
 - **Done when:** `check tests/fixtures/realistic` exits 0 with 5/5 pass; `render` on a tmp copy produces a README whose Contents list has exactly five entries and whose per-diagram sections each contain that fixture's Alt text, with no `Alt:` or `Not shown:` text inside any `Drawn from:` list; a test reads the CRLF fixture's bytes and asserts `\r\n` is present (proves `.gitattributes` kept it); the live test, in the main checkout, discovers >= 1 file and branches on the live state: before M1 (any file lacks `Alt:`) `check` exits 1 with `header-missing-alt` as the ONLY finding code and `render` exits 1 writing nothing to the tmp copy; after M1 both exit 0 — the DONE-gate evidence shows it ran, not skipped; a privacy guard test asserts no file under `tests/fixtures/` equals any live coding-root `.mmd` after Alt-line removal and LF normalization (skips when the live set is absent); full gate clean.
 - **Depends on:** 3
+- **Status:** DONE (2026-10-24)
 
 <!-- autofix-applied: 2026-10-24 -->
 ### Step 6: `render --png` — light/dark rasters through pinned mermaidx

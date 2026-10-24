@@ -1,0 +1,14 @@
+%% Bike Repair Triage
+%% Summary: How a repair shop sorts incoming bikes into same-day fixes, booked repairs and referrals.
+%% Sources:
+%%   - docs/shop/intake.md
+%% Not shown: warranty claims, parts ordering and supplier backorders, loaner bike checkout, e-bike battery diagnostics, wheel truing and spoke replacement, suspension servicing, frame crack inspection, custom builds, payment and deposits, customer pickup reminders, weekly tool calibration routine, shop safety walkthroughs, and the seasonal tune-up promotion that changes intake volume for six weeks every spring
+%% Alt: An intake box splits three ways at a diamond: quick fixes go straight to a work stand, bigger jobs go to a booking calendar, and specialist work leaves the shop.
+
+flowchart TD
+    I[Bike arrives at intake] --> Q{How big is the job?}
+    Q -->|under 30 min| W[Work stand today]
+    Q -->|needs parts or time| K[Booked on calendar]
+    Q -->|specialist| X[Referred elsewhere]
+    K --> W
+    W --> P[Ready for pickup]

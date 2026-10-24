@@ -1,0 +1,16 @@
+%% Garden Watering Schedule
+%% Summary: When the drip system waters each bed, and how a rain sensor skips a cycle.
+%% Sources:
+%%   - docs/garden/irrigation.md
+%%   - docs/garden/sensors.md
+%%   - https://example.com/drip-timer-manual
+%% Not shown: winterizing, hand watering with a hose, fertilizer injection
+%% Alt: A timer box feeds a diamond asking whether rain fell; yes skips to the next day, no opens three bed valves one after another.
+
+flowchart LR
+    T[Morning timer] --> R{Rain in last day?}
+    R -->|yes| S[Skip to tomorrow]
+    R -->|no| V1[Vegetable bed valve]
+    V1 --> V2[Herb bed valve]
+    V2 --> V3[Flower bed valve]
+    V3 --> S

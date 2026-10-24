@@ -4,6 +4,11 @@ tests/fixtures/garbage/*.mmd text eol=lf
 tests/fixtures/good/*.mmd text eol=lf
 tests/fixtures/over-budget/*.mmd text eol=lf
 tests/fixtures/good/*.md text eol=lf
+# Synthetic realistic fixtures (P6: never real coding-root content). LF-pinned, except the
+# *-crlf.mmd edge case, which must stay byte-exact CRLF (-text: no conversion either way).
+tests/fixtures/realistic/*.mmd text eol=lf
+tests/fixtures/realistic/*.md text eol=lf
+tests/fixtures/realistic/*-crlf.mmd -text
 # init templates and this repo's dogfooded docs/workflows are copied / compared byte-for-byte.
 templates/workflows/* text eol=lf
 docs/workflows/*.mmd text eol=lf

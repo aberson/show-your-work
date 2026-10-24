@@ -1,0 +1,18 @@
+%% Title: Library Loan Lifecycle
+%% Summary: A book's path from the shelf to a borrower and back, including holds and overdue notices.
+%% Sources: docs/library/circulation.md
+%% docs/library/holds.md - how the hold queue is ordered
+%% docs/library/overdue.md - when reminder notices go out
+%% Not shown: interlibrary loans, damaged-item fees, staff overrides
+%% Alt: A loop of boxes from shelf to checkout to borrower to the return desk and back to the shelf, with a side branch through a hold shelf.
+
+flowchart TD
+    A[On the shelf] --> B[Checked out]
+    B --> C[With borrower]
+    C -->|due date passes| D[Overdue notice]
+    D --> E[Returned at desk]
+    C --> E
+    E --> F{Hold waiting?}
+    F -->|yes| G[Hold shelf]
+    F -->|no| A
+    G --> B

@@ -1,0 +1,14 @@
+%% Kitchen Orders: From Ticket to Table
+%% Summary: How a restaurant order moves from the counter through the line to the pass: one ticket per table.
+%% Sources:
+%%   - docs/kitchen/tickets.md
+%%   - docs/kitchen/expo.md
+%% Not shown: allergy escalations, comped dishes, split checks
+%% Alt: Five boxes in a row from counter to table, with a loop from the pass back to the line labelled refire.
+
+flowchart LR
+    A[Counter takes order] --> B[Ticket printed]
+    B --> C[Line cooks plate]
+    C --> D[Pass checks plate]
+    D -->|refire| C
+    D -->|ready| E[Server delivers]
