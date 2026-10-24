@@ -141,13 +141,13 @@ deletes):
   "source_dir": "docs/workflows",
   "items": [
     {
-      "id": "plan-to-build-pipeline",
-      "label": "Plan To Build Pipeline",
-      "summary": "The strict seven-stage plan-to-build skill order ...",
-      "alt": "Seven boxes in a column joined by arrows ...",
-      "not_shown": "plan-expedite internals ...",
-      "sources": [".claude/rules/plan-and-issue-flow.md"],
-      "source_path": "docs/workflows/plan-to-build-pipeline.mmd",
+      "id": "release-checklist",
+      "label": "Release Checklist",
+      "summary": "The four gates a release passes in order ...",
+      "alt": "Four boxes in a row joined by arrows ...",
+      "not_shown": "hotfix path, rollback ...",
+      "sources": ["docs/release.md"],
+      "source_path": "docs/workflows/release-checklist.mmd",
       "source_sha256": "<64 hex>",
       "engine": "mermaid",
       "rasters": null
@@ -246,8 +246,9 @@ Finding codes are stable strings defined once in `constants.py`: `header-missing
 diagram: `## title`, summary, `Source:` link, `Drawn from:` source bullets, `**Alt:**`,
 `**Deliberately not shown:**`, the mermaid fence → `## Regenerating` footer with the exact
 command. Anchor slug = GitHub rule (lowercase, drop punctuation including colons, spaces → `-`);
-a test pins the colon case `"Advisory Call Convention: One Fail-Open Call"` →
-`advisory-call-convention-one-fail-open-call`.
+a test pins the colon case `"Release Checklist: One Gated Ship"` →
+`release-checklist-one-gated-ship` (synthetic title; test strings never quote the private
+coding-root diagrams, P6).
 
 **PNG rendering** (`--png`): inject a mermaid front-matter config block carrying `theme`
 (`default` / `dark`) and `flowchart: { wrappingWidth: 400 }` (without it mermaidx breaks long
@@ -444,7 +445,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Issue:** #
 - **Flags:** --reviewers code --isolation worktree
 - **Produces:** `tests/fixtures/realistic/*.mmd` (5), `tests/fixtures/realistic/intro.md`, `.gitattributes`, `tests/test_realistic_fixture.py`, `tests/test_live_coding_root.py`, `docs/migration-coding-root.md`
-- **Done when:** `check tests/fixtures/realistic` exits 0 with 5/5 pass; `render` on a tmp copy produces a README whose Contents list has exactly five entries and whose per-diagram sections each contain that fixture's Alt text, with no `Alt:` or `Not shown:` text inside any `Drawn from:` list; a test reads the CRLF fixture's bytes and asserts `\r\n` is present (proves `.gitattributes` kept it); the live test, in the main checkout, discovers >= 1 file and its only finding code is `header-missing-alt` before M1 (or none after M1) — the DONE-gate evidence shows it ran, not skipped; a privacy guard test asserts no file under `tests/fixtures/` equals any live coding-root `.mmd` after Alt-line removal and LF normalization (skips when the live set is absent); full gate clean.
+- **Done when:** `check tests/fixtures/realistic` exits 0 with 5/5 pass; `render` on a tmp copy produces a README whose Contents list has exactly five entries and whose per-diagram sections each contain that fixture's Alt text, with no `Alt:` or `Not shown:` text inside any `Drawn from:` list; a test reads the CRLF fixture's bytes and asserts `\r\n` is present (proves `.gitattributes` kept it); the live test, in the main checkout, discovers >= 1 file and branches on the live state: before M1 (any file lacks `Alt:`) `check` exits 1 with `header-missing-alt` as the ONLY finding code and `render` exits 1 writing nothing to the tmp copy; after M1 both exit 0 — the DONE-gate evidence shows it ran, not skipped; a privacy guard test asserts no file under `tests/fixtures/` equals any live coding-root `.mmd` after Alt-line removal and LF normalization (skips when the live set is absent); full gate clean.
 - **Depends on:** 3
 
 <!-- autofix-applied: 2026-10-24 -->
@@ -464,7 +465,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Issue:** #
 - **Flags:** --reviewers code --isolation worktree
 - **Produces:** `README.md`, `docs/observatory-amendment.md`, `CLAUDE.md` update, `utility-project.toml` at the repo root (the checker reads `root / "utility-project.toml"`, `utility-project-standard/src/utility_standard/checker.py:340`; start from `templates/manifests/standalone-cli.toml`)
-- **Done when:** `uv run --project ../utility-project-standard utility-standard check .` exits 0 and `uv run --project ../utility-project-standard utility-standard audit-publication .` reports no findings (public repo, P6) (both run from `dev/show-your-work`; the step reads that checker's actual rule set first and quotes the exact manifest path it expects); every command in README is copy-pasted from section 10 and runs; full gate clean.
+- **Done when:** `uv run --project ../utility-project-standard utility-standard check .` exits 0 and `uv run --project ../utility-project-standard utility-standard audit-publication .` reports no findings (public repo, P6; the audit is a read-only scan of tracked files and reachable Git history for absolute paths, usernames, loopback URLs/ports, `.claude/projects` references and secret-shaped path names — `utility-project-standard/standard/publication.md`) (both run from `dev/show-your-work`; the step reads that checker's actual rule set first and quotes the exact manifest path it expects); every command in README is copy-pasted from section 10 and runs; full gate clean.
 - **Depends on:** 4, 5, 6
 
 ### Manual Steps
@@ -528,13 +529,13 @@ Please run M1 next (after `/build-phase` completes).
 ### A. Header example (valid, all five fields)
 
 ```
-%% Plan To Build Pipeline
-%% Summary: The strict seven-stage plan-to-build skill order, the two forbidden shortcuts across it, and plan-expedite as one legal multi-stage run.
+%% Release Checklist
+%% Summary: The four gates a release passes in order - tests, changelog, tag, publish - and the one shortcut that is forbidden.
 %% Sources:
-%%   - .claude/rules/plan-and-issue-flow.md
-%%   - .claude/skills/plan-expedite/core.md
-%% Not shown: plan-expedite internals, autofix flags, build-phase halt classes
-%% Alt: Seven numbered boxes in a vertical column joined by downward arrows, with two red crossed-out shortcut arrows and one tall bracket labelled plan-expedite spanning the middle stages.
+%%   - docs/release.md
+%%   - scripts/release.py
+%% Not shown: hotfix path, rollback, signing keys
+%% Alt: Four boxes in a horizontal row joined by right-pointing arrows, with one red crossed-out arrow skipping from the first box straight to the last.
 
 flowchart TD
     ...
