@@ -21,7 +21,9 @@ section 4 summary line, with non-ASCII and control characters escaped; ``--json`
 or ``--check`` found a stale output, 2 the gate could not run or an output could not be written).
 It prints the same check report, then one ``<file>: written | up to date | stale`` line per
 generated output (to stderr under ``--json``, so stdout stays pure JSON with ``verb`` render).
-``--png`` exits 2 until build step 6.
+``--png`` loads mermaidx (absent or broken: exit 2 with the documented message), checks WITH it
+(anchors first), then also writes ``rasters/<id>-{light,dark}.png``, deletes orphan PNGs there and
+fills ``rasters`` in ``workflows.json``; each raster gets its own ``<path>: <state>`` line.
 
 ``init`` is wired (exit 0 scaffolded, 1 the scaffolded set fails check -- nothing is rendered,
 2 TARGET is a file / cannot be created / a template cannot be read or written). It creates TARGET
@@ -54,7 +56,8 @@ from show_your_work.constants import (
     MIN_PRINTABLE,
     MSG_INIT_CHECK_FAILED,
     MSG_NO_DEFAULT_TARGET,
-    MSG_PNG_UNAVAILABLE,
+    MSG_PNG_RENDERER_BROKEN,
+    MSG_PNG_RENDERER_MISSING,
     MSG_RENDER_REFUSED,
     MSG_RENDERER_BROKEN,
     MSG_RENDERER_MISSING,
@@ -213,13 +216,21 @@ def _run_render(args: argparse.Namespace) -> int:
     try:
         if args.target is None and not target.is_dir():
             raise GateError(MSG_NO_DEFAULT_TARGET.format(path=target.as_posix()))
+        rasterizer: renderer.RasterRenderer | None = None
         if args.png:
-            raise GateError(MSG_PNG_UNAVAILABLE)
-        result = render_dir(target, check_only=args.check)
+            try:
+                rasterizer = renderer.load()
+            except renderer.RendererLoadError as exc:
+                raise GateError(MSG_PNG_RENDERER_BROKEN.format(reason=exc.reason)) from exc
+            if rasterizer is None:
+                raise GateError(MSG_PNG_RENDERER_MISSING)
+        result = render_dir(target, check_only=args.check, rasterizer=rasterizer)
     except GateError as exc:
         print(f"{PROG} render: {_ascii(exc.message)}", file=sys.stderr)
         if as_json:
-            _emit_json(report_json("render", target, [], rendered=False, exit_code=EXIT_GATE))
+            _emit_json(
+                report_json("render", target, [], rendered=bool(args.png), exit_code=EXIT_GATE)
+            )
         return EXIT_GATE
 
     report = result.report
@@ -232,14 +243,17 @@ def _run_render(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return code
-    _emit_outputs(result, args.target, as_json=as_json)
+    _emit_outputs(result, args.target, as_json=as_json, png=bool(args.png))
     return code
 
 
-def _emit_outputs(result: RenderResult, raw_target: str | None, *, as_json: bool) -> None:
+def _emit_outputs(
+    result: RenderResult, raw_target: str | None, *, as_json: bool, png: bool = False
+) -> None:
     """One ``<file>: <state>`` line per generated output, then a hint per stale output."""
     status = sys.stderr if as_json else sys.stdout
-    command = " ".join([PROG, "render", *([raw_target] if raw_target is not None else [])])
+    words = [PROG, "render", *([raw_target] if raw_target is not None else [])]
+    command = " ".join([*words, *(["--png"] if png else [])])
     for output in result.outputs:
         print(f"{output.name}: {output.state}", file=status)
     for name in result.stale:

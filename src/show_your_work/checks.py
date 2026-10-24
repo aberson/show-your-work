@@ -76,6 +76,7 @@ __all__ = [
     "check_dir",
     "check_source",
     "discover",
+    "error_detail",
     "read_source",
 ]
 
@@ -268,6 +269,15 @@ def _source_findings(name: str, raw: bytes) -> list[Finding]:
     return findings
 
 
+def error_detail(exc: BaseException) -> str:
+    """A renderer error as one whitespace-collapsed line of at most ``MAX_RENDER_ERROR_DETAIL``
+    characters (plus ``...``); the exception type name when the message is empty."""
+    detail = " ".join(str(exc).split()) or type(exc).__name__
+    if len(detail) > MAX_RENDER_ERROR_DETAIL:
+        detail = detail[:MAX_RENDER_ERROR_DETAIL] + "..."
+    return detail
+
+
 def _render_findings(
     name: str, text: str, renderer: Renderer
 ) -> tuple[int | None, int | None, list[Finding]]:
@@ -275,9 +285,7 @@ def _render_findings(
     try:
         svg = renderer.svg(text)
     except Exception as exc:  # any renderer failure is a per-file finding, never a crash
-        detail = " ".join(str(exc).split()) or type(exc).__name__
-        if len(detail) > MAX_RENDER_ERROR_DETAIL:
-            detail = detail[:MAX_RENDER_ERROR_DETAIL] + "..."
+        detail = error_detail(exc)
         return None, None, [Finding(name, CODE_RENDER_ERROR, f"mermaid render failed: {detail}")]
     nodes, edges = renderer_mod.svg_counts(svg)
     findings: list[Finding] = []

@@ -18,6 +18,21 @@ Every reader normalizes CRLF to LF, and every write is LF / UTF-8 through an ato
 the bytes never depend on ``core.autocrlf``. A generated file whose content is already current
 (``workflows.json`` compared with ``generated_at`` masked) is left untouched, so a repeat run
 changes no bytes. ``check_only`` (``render --check``) writes nothing and also masks ``rasters``.
+
+With a ``rasterizer`` (``render --png``, section 4) the check runs WITH that renderer, so the
+garbage / known-good anchors run before any file is read; then the anchors run again through the
+raster path, and every diagram is rasterized for both themes IN MEMORY before anything is
+written. Only then are ``rasters/<id>-<theme>.png`` written (byte-identical files are left
+alone), then ``README.md`` / ``workflows.json`` with ``rasters`` filled from the fresh bytes
+(``path``, ``sha256``, ``width`` / ``height`` from the PNG's IHDR, ``bytes``), and LAST the orphan
+PNGs are deleted under the section 4 safety rules (only regular ``*.png`` files directly inside
+``rasters/`` that the new index does not reference: never recursing, never following a symlink,
+never touching another file type). An interrupted run therefore never leaves an index naming a
+deleted file, and a raster rewritten before the index was is caught by the strict
+preserved-or-null rule on the next plain ``render``. Every canvas is checked against the pixel
+caps (``MAX_RASTER_SIDE`` / ``MAX_RASTER_PIXELS``) before it is rasterized; over the cap is exit
+2 with nothing written. ``check_only`` with a rasterizer writes and deletes nothing and compares
+rasters unmasked, reporting each raster that would change.
 """
 
 from __future__ import annotations
@@ -27,14 +42,22 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from show_your_work import __version__
-from show_your_work.checks import GateError, Report, check_dir, discover, read_source
+from show_your_work import renderer as renderer_mod
+from show_your_work.checks import (
+    GateError,
+    Report,
+    check_dir,
+    discover,
+    error_detail,
+    read_source,
+)
 from show_your_work.constants import (
     ANCHOR_KEEP_CHARS,
     ATX_HEADING_RE,
@@ -63,14 +86,20 @@ from show_your_work.constants import (
     MAX_GENERATED_BYTES,
     MERMAID_FENCE_INFO,
     MIN_FENCE,
+    MSG_ANCHOR_BROKEN,
+    MSG_CANNOT_DELETE,
+    MSG_CANNOT_READ,
     MSG_CANNOT_WRITE,
     MSG_INTRO_NOT_UTF8,
+    MSG_RASTER_FAILED,
+    MSG_RASTERS_NOT_DIR,
     MSG_SOURCE_CHANGED,
     MSG_STAMP_NOT_UTC,
     MSG_SYMLINK_SOURCE,
     NO_PROJECT_ROOT_DIR,
     RASTER_ENTRY_KEYS,
     RASTER_FILE,
+    RASTER_SUFFIX,
     RASTER_THEMES,
     RASTERS_DIR,
     README_ALT_LABEL,
@@ -85,10 +114,12 @@ from show_your_work.constants import (
     SHA256_HEX_RE,
     SOURCE_SUFFIX,
     STATE_CURRENT,
+    STATE_DELETED,
     STATE_STALE,
     STATE_WRITTEN,
 )
 from show_your_work.header import Header, HeaderError, check_header, normalize_newlines
+from show_your_work.renderer import RasterRenderer
 
 __all__ = [
     "Diagram",
@@ -99,6 +130,7 @@ __all__ = [
     "github_anchor",
     "index_up_to_date",
     "project_root",
+    "raster_path",
     "render_dir",
     "serialize_index",
     "source_dir_of",
@@ -220,8 +252,8 @@ def _read_intro(target: Path) -> str | None:
     return normalize_newlines(text)
 
 
-def _read_generated(path: Path) -> str | None:
-    """An existing generated file as LF text; ``None`` (= stale) when absent or unusable."""
+def _read_generated_bytes(path: Path) -> bytes | None:
+    """An existing generated file's bytes; ``None`` (= stale) when absent, a link or oversized."""
     try:
         if path.is_symlink() or not path.is_file():
             return None
@@ -230,6 +262,14 @@ def _read_generated(path: Path) -> str | None:
     except OSError:
         return None
     if len(raw) > MAX_GENERATED_BYTES:
+        return None
+    return raw
+
+
+def _read_generated(path: Path) -> str | None:
+    """An existing generated file as LF text; ``None`` (= stale) when absent or unusable."""
+    raw = _read_generated_bytes(path)
+    if raw is None:
         return None
     try:
         return normalize_newlines(raw.decode("utf-8"))
@@ -407,13 +447,23 @@ def _non_negative_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def raster_path(diagram_id: str, theme: str) -> str:
+    """The index ``path`` of one raster: ``rasters/<id>-<theme>.png`` (POSIX, TARGET-relative)."""
+    return f"{RASTERS_DIR}/{RASTER_FILE.format(id=diagram_id, theme=theme)}"
+
+
 def _raster_entry(
     diagram_id: str, theme: str, entry: object, target: Path
 ) -> dict[str, Any] | None:
-    """A previous ``rasters.<theme>`` entry rebuilt with the exact key set, or ``None``."""
+    """A previous ``rasters.<theme>`` entry rebuilt with the exact key set, or ``None``.
+
+    Section 3.4's preserved-or-null rule, read strictly: the entry survives only while the file
+    it names still exists AND still matches it (``bytes`` and ``sha256`` of the on-disk file), so
+    a raster changed or replaced on disk is never re-published under its old hash.
+    """
     if not isinstance(entry, dict):
         return None
-    expected_path = f"{RASTERS_DIR}/{RASTER_FILE.format(id=diagram_id, theme=theme)}"
+    expected_path = raster_path(diagram_id, theme)
     path, digest, *dims = (entry.get(key) for key in RASTER_ENTRY_KEYS)
     if path != expected_path:
         return None
@@ -421,13 +471,12 @@ def _raster_entry(
         return None
     if not all(_non_negative_int(value) for value in dims):
         return None
-    try:
-        exists = target.joinpath(
-            RASTERS_DIR, RASTER_FILE.format(id=diagram_id, theme=theme)
-        ).is_file()
-    except OSError:
-        exists = False
-    if not exists:
+    on_disk = _read_generated_bytes(
+        target.joinpath(RASTERS_DIR, RASTER_FILE.format(id=diagram_id, theme=theme))
+    )
+    if on_disk is None or len(on_disk) != dims[-1]:
+        return None
+    if hashlib.sha256(on_disk).hexdigest() != digest:
         return None
     return dict(zip(RASTER_ENTRY_KEYS, (path, digest, *dims), strict=True))
 
@@ -461,9 +510,11 @@ def build_index(
     *,
     previous: dict[str, Any] | None = None,
     target: Path | None = None,
+    rasters: Mapping[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The ``show-your-work.workflows.v1`` document, keys in their fixed order.
 
+    ``rasters`` (id -> freshly rendered entries, ``render --png``) wins when given. Otherwise
     ``previous`` (the parsed existing index) and ``target`` feed the rasters preserved-or-null
     rule; without them every ``rasters`` is ``null``.
     """
@@ -471,7 +522,12 @@ def build_index(
         raise ValueError(MSG_STAMP_NOT_UTC)
     items: list[dict[str, Any]] = []
     for d in sorted(diagrams, key=lambda x: x.id):
-        rasters = _preserved_rasters(d.id, previous, target) if target is not None else None
+        if rasters is not None:
+            item_rasters: dict[str, Any] | None = rasters[d.id]
+        elif target is not None:
+            item_rasters = _preserved_rasters(d.id, previous, target)
+        else:
+            item_rasters = None
         values = (
             d.id,
             d.header.title,
@@ -482,7 +538,7 @@ def build_index(
             _source_path(source_dir, d.id),
             d.sha256,
             d.engine,
-            rasters,
+            item_rasters,
         )
         items.append(dict(zip(INDEX_ITEM_KEYS, values, strict=True)))
     stamp = generated_at.astimezone(UTC).isoformat(timespec="seconds")
@@ -539,14 +595,14 @@ def index_up_to_date(existing: str | None, fresh: dict[str, Any], *, mask_raster
 # --- writing -------------------------------------------------------------------------------
 
 
-def write_atomic(path: Path, text: str, *, mode: int | None = None) -> None:
-    """Write UTF-8 / LF bytes through a temp file in the same directory and ``os.replace``.
+def write_atomic(path: Path, text: str | bytes, *, mode: int | None = None) -> None:
+    """Write ``text`` (UTF-8 encoded; ``bytes`` as-is) through a temp file and ``os.replace``.
 
     ``os.replace`` swaps the directory entry, so a symlink at ``path`` is replaced, never written
     through. ``mode`` (permission bits) is applied to the temp file before the swap; without it
     the file keeps ``mkstemp``'s owner-only mode. Any I/O failure is :class:`GateError` (exit 2).
     """
-    data = text.encode("utf-8")
+    data = text.encode("utf-8") if isinstance(text, str) else text
     tmp: str | None = None
     try:
         fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -565,19 +621,179 @@ def write_atomic(path: Path, text: str, *, mode: int | None = None) -> None:
                 os.unlink(tmp)
 
 
-def render_dir(target: Path, *, check_only: bool = False) -> RenderResult:
+# --- rasters (section 4 "PNG rendering") ---------------------------------------------------
+
+
+def _render_rasters(
+    diagrams: Sequence[Diagram], rasterizer: RasterRenderer
+) -> dict[str, dict[str, bytes]]:
+    """Every diagram x theme rasterized IN MEMORY (nothing is written until all succeed).
+
+    :func:`show_your_work.renderer.png` checks each canvas against the pixel caps before the
+    native rasterizer runs; an over-cap canvas, a renderer fault or a non-PNG result is exit 2.
+    """
+    rendered: dict[str, dict[str, bytes]] = {}
+    for diagram in diagrams:
+        per_theme: dict[str, bytes] = {}
+        for theme in RASTER_THEMES:
+            try:
+                data = renderer_mod.png(rasterizer, diagram.text, theme)
+                renderer_mod.png_size(data)
+            except Exception as exc:  # a renderer fault after the anchors passed: exit 2
+                message = MSG_RASTER_FAILED.format(
+                    id=diagram.id, theme=theme, detail=error_detail(exc)
+                )
+                raise GateError(message) from exc
+            per_theme[theme] = data
+        rendered[diagram.id] = per_theme
+    return rendered
+
+
+def _raster_entries(rendered: Mapping[str, Mapping[str, bytes]]) -> dict[str, dict[str, Any]]:
+    """id -> ``{"light": entry, "dark": entry}`` with the exact section 3.4 entry key set."""
+    out: dict[str, dict[str, Any]] = {}
+    for diagram_id, per_theme in rendered.items():
+        entries: dict[str, Any] = {}
+        for theme in RASTER_THEMES:
+            data = per_theme[theme]
+            width, height = renderer_mod.png_size(data)
+            values = (
+                raster_path(diagram_id, theme),
+                hashlib.sha256(data).hexdigest(),
+                width,
+                height,
+                len(data),
+            )
+            entries[theme] = dict(zip(RASTER_ENTRY_KEYS, values, strict=True))
+        out[diagram_id] = entries
+    return out
+
+
+def _os_reason(exc: OSError) -> str:
+    return exc.strerror or type(exc).__name__
+
+
+def _rasters_dir(target: Path) -> Path | None:
+    """``TARGET/rasters`` when it is a plain directory, ``None`` when absent; exit 2 otherwise.
+
+    A symlink or a Windows junction (which ``is_symlink`` does not report) is refused, so neither
+    writing nor orphan cleanup ever reaches through a link into another directory.
+    """
+    path = target / RASTERS_DIR
+    try:
+        if path.is_symlink() or path.is_junction() or (path.exists() and not path.is_dir()):
+            raise GateError(MSG_RASTERS_NOT_DIR.format(path=path.as_posix()))
+        return path if path.is_dir() else None
+    except OSError as exc:
+        raise GateError(
+            MSG_CANNOT_READ.format(path=path.as_posix(), reason=_os_reason(exc))
+        ) from exc
+
+
+def _orphan_pngs(directory: Path | None, keep: frozenset[str]) -> list[Path]:
+    """Regular ``*.png`` files directly inside ``directory`` whose name is not in ``keep``.
+
+    ``keep`` holds case-folded names, so on a case-insensitive filesystem a just-written raster
+    whose directory entry kept an older casing is never mistaken for an orphan. Symlinks,
+    directories (and anything beneath them) and non-PNG names are never candidates.
+    """
+    if directory is None:
+        return []
+    orphans: list[Path] = []
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if not entry.name.endswith(RASTER_SUFFIX) or entry.name.casefold() in keep:
+                    continue
+                if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                    continue
+                orphans.append(Path(entry.path))
+    except OSError as exc:
+        path = directory.as_posix()
+        raise GateError(MSG_CANNOT_READ.format(path=path, reason=_os_reason(exc))) from exc
+    return sorted(orphans, key=lambda p: p.name)
+
+
+def _delete(path: Path) -> None:
+    try:
+        os.unlink(path)
+    except OSError as exc:
+        path_text = path.as_posix()
+        raise GateError(MSG_CANNOT_DELETE.format(path=path_text, reason=_os_reason(exc))) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class _RasterPlan:
+    """What ``render --png`` would change under ``rasters/``, decided before any write."""
+
+    directory: Path
+    exists: bool
+    files: tuple[tuple[str, bytes, bool], ...]  # (file name, fresh bytes, already current)
+    orphans: tuple[Path, ...]
+
+    def statuses(self, *, check_only: bool) -> list[OutputStatus]:
+        changed = STATE_STALE if check_only else STATE_WRITTEN
+        removed = STATE_STALE if check_only else STATE_DELETED
+        out = [
+            OutputStatus(f"{RASTERS_DIR}/{name}", STATE_CURRENT if current else changed)
+            for name, _, current in self.files
+        ]
+        out.extend(OutputStatus(f"{RASTERS_DIR}/{p.name}", removed) for p in self.orphans)
+        return out
+
+
+def _plan_rasters(target: Path, rendered: Mapping[str, Mapping[str, bytes]]) -> _RasterPlan:
+    existing = _rasters_dir(target)
+    directory = target / RASTERS_DIR
+    files: list[tuple[str, bytes, bool]] = []
+    for diagram_id, per_theme in rendered.items():
+        for theme in RASTER_THEMES:
+            name = RASTER_FILE.format(id=diagram_id, theme=theme)
+            data = per_theme[theme]
+            current = existing is not None and _read_generated_bytes(directory / name) == data
+            files.append((name, data, current))
+    keep = frozenset(name.casefold() for name, _, _ in files)
+    orphans = tuple(_orphan_pngs(existing, keep))
+    return _RasterPlan(directory, existing is not None, tuple(files), orphans)
+
+
+def _write_rasters(plan: _RasterPlan) -> None:
+    """Phase 1 of a ``--png`` write: create ``rasters/`` and (re)write every changed raster."""
+    if not plan.exists:
+        try:
+            plan.directory.mkdir()
+        except OSError as exc:
+            path = plan.directory.as_posix()
+            raise GateError(MSG_CANNOT_WRITE.format(path=path, reason=_os_reason(exc))) from exc
+    for name, data, current in plan.files:
+        if not current:
+            write_atomic(plan.directory / name, data)
+
+
+def render_dir(
+    target: Path, *, check_only: bool = False, rasterizer: RasterRenderer | None = None
+) -> RenderResult:
     """Check, then regenerate (or with ``check_only`` compare) ``README.md`` + ``workflows.json``.
+
+    With ``rasterizer`` (``render --png``) the check renders every file (anchors first), the
+    raster anchors run and every raster is rendered in memory. The write order is then: changed
+    rasters, ``README.md`` + ``workflows.json``, and orphan deletion last.
 
     Raises :class:`GateError` (exit 2) when the gate cannot run or an output cannot be written.
     A failing check set returns exit 1 with nothing written; ``check_only`` returns exit 1 when
-    either output is stale.
+    any output is stale.
     """
     target = target.resolve()
-    report = check_dir(target)
+    report = check_dir(target, renderer=rasterizer)
     if report.failed:
         return RenderResult(report, (), EXIT_FINDINGS)
 
     diagrams = _load_diagrams(target)
+    rendered: dict[str, dict[str, bytes]] | None = None
+    if rasterizer is not None:
+        if not renderer_mod.raster_anchor_ok(rasterizer):
+            raise GateError(MSG_ANCHOR_BROKEN)
+        rendered = _render_rasters(diagrams, rasterizer)
     intro = _read_intro(target)
     source_dir = source_dir_of(target)
     readme_path = target / README_NAME
@@ -587,19 +803,32 @@ def render_dir(target: Path, *, check_only: bool = False) -> RenderResult:
 
     readme = build_readme(diagrams, intro, source_dir)
     index = build_index(
-        diagrams, source_dir, _utc_now(), previous=_parse_index(existing_index), target=target
+        diagrams,
+        source_dir,
+        _utc_now(),
+        previous=_parse_index(existing_index),
+        target=target,
+        rasters=_raster_entries(rendered) if rendered is not None else None,
     )
     readme_current = existing_readme == readme
-    index_current = index_up_to_date(existing_index, index, mask_rasters=check_only)
+    mask_rasters = check_only and rendered is None
+    index_current = index_up_to_date(existing_index, index, mask_rasters=mask_rasters)
+    plan = _plan_rasters(target, rendered) if rendered is not None else None
+    raster_statuses = plan.statuses(check_only=check_only) if plan is not None else []
 
     if check_only:
-        outputs = tuple(
-            OutputStatus(name, STATE_CURRENT if current else STATE_STALE)
-            for name, current in ((README_NAME, readme_current), (INDEX_NAME, index_current))
+        outputs = (
+            *(
+                OutputStatus(name, STATE_CURRENT if current else STATE_STALE)
+                for name, current in ((README_NAME, readme_current), (INDEX_NAME, index_current))
+            ),
+            *raster_statuses,
         )
         code = EXIT_FINDINGS if any(o.state == STATE_STALE for o in outputs) else EXIT_OK
         return RenderResult(report, outputs, code)
 
+    if plan is not None:
+        _write_rasters(plan)  # before the index, so it never names a file not yet written
     statuses: list[OutputStatus] = []
     for path, text, current in (
         (readme_path, readme, readme_current),
@@ -608,4 +837,7 @@ def render_dir(target: Path, *, check_only: bool = False) -> RenderResult:
         if not current:
             write_atomic(path, text)
         statuses.append(OutputStatus(path.name, STATE_CURRENT if current else STATE_WRITTEN))
-    return RenderResult(report, tuple(statuses), EXIT_OK)
+    if plan is not None:
+        for orphan in plan.orphans:  # last: an interrupted run never strands the index
+            _delete(orphan)
+    return RenderResult(report, (*statuses, *raster_statuses), EXIT_OK)

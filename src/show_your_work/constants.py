@@ -297,11 +297,67 @@ NO_PROJECT_ROOT_DIR: Final = "."
 
 #: Raster layout (section 3.1): ``rasters/<id>-<theme>.png``; one entry per theme, keyed in order.
 RASTERS_DIR: Final = "rasters"
-RASTER_THEMES: Final[tuple[str, ...]] = tuple(["light", "dark"])
+RASTER_LIGHT: Final = "light"
+RASTER_DARK: Final = "dark"
+RASTER_THEMES: Final[tuple[str, ...]] = tuple([RASTER_LIGHT, RASTER_DARK])
 RASTER_FILE: Final = "{id}-{theme}.png"
 #: The exact key set of one ``rasters.<theme>`` entry, in order (section 3.4).
 RASTER_ENTRY_KEYS: Final[tuple[str, ...]] = tuple(["path", "sha256", "width", "height", "bytes"])
 SHA256_HEX_RE: Final = re.compile(r"^[0-9a-f]{64}$")
+
+# ---------------------------------------------------------------------------
+# Frozen raster parameters for ``render --png`` (section 4 "PNG rendering", DD5). An unpinned
+# value here silently changes every raster hash and dimension a downstream consumer declares.
+# ---------------------------------------------------------------------------
+
+#: Size multiplier passed to ``png(scale=...)``: a 2x render of the diagram's natural size.
+RASTER_SCALE: Final = 2
+#: ``flowchart.wrappingWidth`` injected into every raster render; without it mermaidx breaks long
+#: tokens mid-word (spike section "Fidelity").
+RASTER_WRAPPING_WIDTH: Final = 400
+#: Raster theme -> the mermaid ``theme`` injected for it (keys match ``RASTER_THEMES``).
+RASTER_MERMAID_THEMES: Final[Mapping[str, str]] = MappingProxyType(
+    {RASTER_LIGHT: "default", RASTER_DARK: "dark"}
+)
+#: Raster theme -> the OPAQUE background passed to ``png(background=...)``; never transparent.
+RASTER_BACKGROUNDS: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        RASTER_LIGHT: "#ffffff",
+        # Dark = mermaid's dark-theme `background` variable: confirmed in the mermaidx 0.9.5 bundle,
+        # mermaidx/assets/mermaid.js (mermaid 11.16.0), dark Theme class `this.background="#333"`.
+        RASTER_DARK: "#333333",
+    }
+)
+#: The mermaid front-matter config block prepended to a source for a raster render only (the
+#: committed sources stay config-free). ``{theme}`` / ``{wrapping_width}`` are filled per render.
+FRONT_MATTER_TEMPLATE: Final = (
+    "---\nconfig:\n  theme: {theme}\n  flowchart:\n    wrappingWidth: {wrapping_width}\n---\n"
+)
+#: Every raster file ends with this suffix; orphan cleanup considers only regular files that
+#: end with it, directly inside ``RASTERS_DIR`` (never recursing, never following a symlink).
+RASTER_SUFFIX: Final = ".png"
+#: The 8-byte PNG signature, followed by the IHDR chunk (length, ``IHDR`` tag, width, height).
+PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
+PNG_IHDR_TAG: Final = b"IHDR"
+#: Byte offsets inside a PNG: the IHDR chunk tag, then the big-endian width / height words.
+PNG_IHDR_TAG_OFFSET: Final = 12
+PNG_WIDTH_OFFSET: Final = 16
+PNG_HEADER_BYTES: Final = 24
+
+#: Raster canvas caps, in pixels AFTER ``RASTER_SCALE``, checked against the SVG-derived size
+#: BEFORE ``png()`` runs. A budget-passing diagram can still carry a ``%%{init}%%`` directive that
+#: inflates fonts / spacing; the native rasterizer then tries a multi-hundred-GB allocation and
+#: aborts the whole process instead of raising. Far above any legible 14-node diagram (the
+#: realistic fixtures top out near 2900 x 1700 at 2x).
+MAX_RASTER_SIDE: Final = 16_384
+MAX_RASTER_PIXELS: Final = 50_000_000
+#: The root ``<svg>`` tag's ``viewBox="min-x min-y width height"`` (searched in the tag only).
+SVG_VIEWBOX_RE: Final = re.compile(r'\sviewBox="([^"]*)"')
+SVG_VIEWBOX_FIELDS: Final = 4
+#: Absolute numeric ``width`` / ``height`` attributes on the root tag (``100%`` never matches;
+#: the leading whitespace keeps ``stroke-width`` / ``max-width`` from matching).
+SVG_WIDTH_ATTR_RE: Final = re.compile(r'\swidth="([0-9]+(?:\.[0-9]+)?)(?:px)?"')
+SVG_HEIGHT_ATTR_RE: Final = re.compile(r'\sheight="([0-9]+(?:\.[0-9]+)?)(?:px)?"')
 
 #: An existing generated file larger than this is never read back; it is simply stale.
 MAX_GENERATED_BYTES: Final = 16 * 1024 * 1024
@@ -344,6 +400,8 @@ INLINE_LINK_RE: Final = re.compile(r"!?\[([^\[\]]*)\]\([^()\s]*\)")
 STATE_WRITTEN: Final = "written"
 STATE_CURRENT: Final = "up to date"
 STATE_STALE: Final = "stale"
+#: ``render --png`` removed an orphan raster (section 4 safety rules).
+STATE_DELETED: Final = "deleted"
 
 #: ``build_index`` refuses a naive or non-UTC ``generated_at`` (section 3.4).
 MSG_STAMP_NOT_UTC: Final = "generated_at must carry a UTC offset of exactly zero"
@@ -354,8 +412,20 @@ MSG_CANNOT_WRITE: Final = "cannot write {path}: {reason}"
 MSG_INTRO_NOT_UTF8: Final = "cannot read {path}: not valid UTF-8"
 #: Exit 2 when a source changed between ``check`` and ``render`` and no longer parses.
 MSG_SOURCE_CHANGED: Final = "source {path} changed during render and no longer passes check"
-#: Exit 2 until ``render --png`` lands (build step 6).
-MSG_PNG_UNAVAILABLE: Final = "--png is not available yet; run render without --png"
+#: Exit 2 when a raster render fails or does not return a PNG (the anchors passed, so this is a
+#: renderer fault, not a diagram finding).
+MSG_RASTER_FAILED: Final = "cannot rasterize {id} ({theme}): {detail}"
+#: The detail of ``MSG_RASTER_FAILED`` (exit 2, nothing written) for an over-cap canvas.
+MSG_RASTER_TOO_LARGE: Final = (
+    f"canvas would be {{width}}x{{height}} px (max {MAX_RASTER_SIDE} px per side, "
+    f"{MAX_RASTER_PIXELS} px in total)"
+)
+#: The detail of ``MSG_RASTER_FAILED`` when the SVG carries no usable size to bound the canvas.
+MSG_SVG_NO_SIZE: Final = "SVG has no usable viewBox; cannot bound the raster size"
+#: Exit 2 when ``rasters`` exists but is a symlink or not a directory (never written through).
+MSG_RASTERS_NOT_DIR: Final = "refusing to use {path}: not a plain directory"
+#: Exit 2 when an orphan raster cannot be deleted.
+MSG_CANNOT_DELETE: Final = "cannot delete {path}: {reason}"
 #: Printed when ``render`` refuses a failing set (exit 1, nothing written).
 MSG_RENDER_REFUSED: Final = "refusing to render: {failed} of {total} file(s) fail check"
 #: Printed per stale generated file under ``render --check``.
@@ -376,17 +446,21 @@ MSG_NO_DEFAULT_TARGET: Final = (
 MSG_TARGET_NOT_DIR: Final = "target is not a directory: {path}"
 #: Exit 2 when TARGET holds no top-level ``*.mmd`` file.
 MSG_NO_SOURCES: Final = "no *.mmd files in {path}"
-#: Exit 2 for ``--render`` (and later ``--png``) when the optional renderer is not importable.
-MSG_RENDERER_MISSING: Final = (
-    "mermaidx is not installed; --render needs the optional 'render' extra (uv sync --extra render)"
+#: Exit 2 for ``--render`` / ``--png`` when the optional renderer is not importable.
+RENDERER_MISSING_TEMPLATE: Final = (
+    "mermaidx is not installed; {flag} needs the optional 'render' extra (uv sync --extra render)"
 )
+MSG_RENDERER_MISSING: Final = RENDERER_MISSING_TEMPLATE.format(flag="--render")
+MSG_PNG_RENDERER_MISSING: Final = RENDERER_MISSING_TEMPLATE.format(flag="--png")
 #: Exit 2 when the render anchors fail (DD5): garbage rendered, or known-good did not render.
 MSG_ANCHOR_BROKEN: Final = (
     "renderer anchor broken: the known-garbage fixture must raise and a known-good diagram "
     "must render; no render result can be trusted"
 )
 #: Exit 2 when the optional renderer is installed but fails to import or initialise.
-MSG_RENDERER_BROKEN: Final = "mermaidx failed to load ({reason}); --render cannot run"
+RENDERER_BROKEN_TEMPLATE: Final = "mermaidx failed to load ({{reason}}); {flag} cannot run"
+MSG_RENDERER_BROKEN: Final = RENDERER_BROKEN_TEMPLATE.format(flag="--render")
+MSG_PNG_RENDERER_BROKEN: Final = RENDERER_BROKEN_TEMPLATE.format(flag="--png")
 #: Exit 2 when TARGET or a source cannot be listed or read (permissions, locks, I/O errors).
 MSG_CANNOT_READ: Final = "cannot read {path}: {reason}"
 #: Exit 2 for a symlinked source: ``check`` never follows a link out of TARGET.

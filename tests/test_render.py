@@ -609,16 +609,6 @@ def test_render_json_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert json.loads(capsys.readouterr().out)["exit_code"] == EXIT_OK
 
 
-def test_render_png_exits_2_until_step_6(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    target = _copy_good(tmp_path / "good")
-    before = _snapshot(target)
-    assert main(["render", str(target), "--png"]) == EXIT_GATE
-    assert "--png" in capsys.readouterr().err
-    assert _snapshot(target) == before
-
-
 def test_render_default_target_missing_exits_2(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

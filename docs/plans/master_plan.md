@@ -166,7 +166,9 @@ deletes):
   on cwd.
 - `source_sha256` is SHA-256 over the file's bytes after CRLF -> LF normalization (section 3.3).
 - A plain `render` (no `--png`) **preserves** an existing item's `rasters` entry when both
-  referenced files still exist, and writes `null` otherwise; it never deletes raster files. This
+  referenced files still exist and still match the entry's `sha256` and `bytes`, and writes
+  `null` otherwise (Step 6 build decision, 2026-10-24: an index must never claim hashes the files
+  on disk do not have); it never deletes raster files. This
   is what lets `render --check` ignore raster hashes without `--png` (section 9).
 - `engine` is `"mermaid"` unless `<id>.excalidraw.svg` exists beside the `.mmd`, then
   `"excalidraw"` (the `.mmd` becomes provenance; the SVG is truth — contract section 4).
@@ -460,8 +462,9 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Issue:** #7
 - **Flags:** --reviewers deep --isolation worktree
 - **Produces:** `renderer.py`/`render.py` extensions, `tests/test_png.py` (skipped with a reason when mermaidx is absent; the CI/gate for this step runs with `--extra render`), `constants.py` raster constants
-- **Done when:** with `uv sync --extra dev --extra render`: `render --png` on the `good` fixture writes two PNGs whose IHDR width/height equal `round(2 x` the same renderer's SVG viewBox width/height`)` (host-font independent; not a `>= 1` check); a test asserts the injected block contains `wrappingWidth: 400` and that `scale` and a non-transparent `background` reach `png()`; a monkeypatched renderer whose garbage render does not raise makes `--png` exit 2 and write nothing; a stale `rasters/stray.png` is deleted while a `rasters/notes.txt` and a `rasters/sub/x.png` survive; `workflows.json` `rasters` entries carry hashes equal to the on-disk files; full gate clean including `uv run pytest -q` with the render extra installed.
+- **Done when:** with `uv sync --extra dev --extra render`: `render --png` on the `good` fixture writes two PNGs whose IHDR width/height equal `2 x round_half_up(` the same renderer's SVG viewBox width/height`)` (the rounding the pinned resvg applies — amended 2026-10-24 at build time from `round(2 x ...)`; host-font independent; not a `>= 1` check); a test asserts the injected block contains `wrappingWidth: 400` and that `scale` and a non-transparent `background` reach `png()`; a monkeypatched renderer whose garbage render does not raise makes `--png` exit 2 and write nothing; a stale `rasters/stray.png` is deleted while a `rasters/notes.txt` and a `rasters/sub/x.png` survive; `workflows.json` `rasters` entries carry hashes equal to the on-disk files; full gate clean including `uv run pytest -q` with the render extra installed.
 - **Depends on:** 3
+- **Status:** DONE (2026-10-24)
 
 <!-- autofix-applied: 2026-10-24 -->
 ### Step 7: README and utility-project-standard conformance
@@ -590,7 +593,7 @@ IDs are append-only and stable. `P` = operator pick, `D` = agent default. Revers
 | D11 | D | Unbulleted `%%` lines inside `Sources:` are continuations; any other non-label header line is `header-stray-line`; title is always line 1 verbatim | proposed 2026-10-24 (plan-review) |
 | D12 | D | CRLF normalized to LF before parse, hash and embed; fixtures stored LF | proposed 2026-10-24 (plan-review) |
 | D13 | D | `source_dir` relative to nearest `.git` ancestor, `"."` when none; discovery top-level only | proposed 2026-10-24 (plan-review) |
-| D14 | D | Plain `render` preserves existing `rasters` entries whose files exist; `--check` masks `rasters` without `--png` | proposed 2026-10-24 (plan-review) |
+| D14 | D | Plain `render` preserves existing `rasters` entries whose files exist and still match their `sha256`/`bytes`; `--check` masks `rasters` without `--png` | proposed 2026-10-24 (plan-review); hash-match clause decided 2026-10-24 (Step 6 build) |
 | D15 | D | Usage errors exit 64 via an `ArgumentParser.error` override (argparse default 2 collides) | proposed 2026-10-24 (plan-review) |
 | D16 | D | Dark raster background `#333333` (confirmed in Step 6); orphan cleanup deletes only top-level regular `*.png` | proposed 2026-10-24 (plan-review) |
 | D17 | D | Template marker is the last line (`%% show-your-work:template` / `<!-- show-your-work:template -->`), outside the header | proposed 2026-10-24 (plan-review) |
