@@ -418,6 +418,7 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
 - **Produces:** `src/show_your_work/{checks,renderer}.py`, `cli.py` check wiring, `tests/test_checks.py`, `tests/test_cli.py`, `tests/fixtures/garbage/garbage.mmd`, `tests/fixtures/over-budget/*.mmd` (15 nodes, 21 edges, 61-char node label, 41-char edge label, 3 subgraphs, unbalanced end), `tests/fixtures/good/minimal.mmd`
 - **Done when:** through `cli.main([...])` (the production caller): `check tests/fixtures/good` exits 0; `check tests/fixtures/over-budget` exits 1 and the JSON report names every source-checkable budget code (node label, edge label, subgraph count, unbalanced `end`) while the 15-node and 21-edge fixtures report `-` counts plus the NOTE line (section 3.3: counts are exact only under `--render`); `check --render tests/fixtures/over-budget` with a monkeypatched renderer returning SVGs with known node/edge counts (anchor raising correctly) names `budget-nodes` and `budget-edges`; `check tests/fixtures/bad-headers` exits 1; `check <empty dir>` exits 2; `check --render` with a monkeypatched renderer whose garbage render does NOT raise exits 2 before touching any file (anchor watched failing); `check --render` with mermaidx absent exits 2 with the documented message; an `.excalidraw.svg` without a sibling `.mmd` fails with `excalidraw-orphan`; full gate clean.
 - **Depends on:** 1
+- **Status:** DONE (2026-10-24)
 
 <!-- autofix-applied: 2026-10-24 -->
 ### Step 3: `render` verb — generated README and `workflows.json` index with `--check`

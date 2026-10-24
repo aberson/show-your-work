@@ -1,0 +1,14 @@
+%% Unbalanced End
+%% Summary: Two subgraphs opened but only one closed, so the subgraph and end lines do not balance.
+%% Sources:
+%%   - docs/example.md
+%% Not shown: error paths, retries
+%% Alt: Two labelled lanes, the second never closed, each holding one box.
+
+flowchart TD
+    subgraph one
+        A[Plan]
+    end
+    subgraph two
+        B[Build]
+    A --> B

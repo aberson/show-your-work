@@ -1,0 +1,18 @@
+%% Three Subgraphs
+%% Summary: Three grouped lanes, one more subgraph than the budget allows.
+%% Sources:
+%%   - docs/example.md
+%% Not shown: error paths, retries
+%% Alt: Three labelled lanes stacked vertically, each holding one box, joined top to bottom.
+
+flowchart TD
+    subgraph one
+        A[Plan]
+    end
+    subgraph two
+        B[Build]
+    end
+    subgraph three
+        C[Ship]
+    end
+    A --> B --> C

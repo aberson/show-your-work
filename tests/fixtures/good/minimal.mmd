@@ -1,0 +1,10 @@
+%% Minimal Example
+%% Summary: Three steps from a request to a reviewed change.
+%% Sources:
+%%   - docs/example.md
+%% Not shown: error paths, retries
+%% Alt: Three boxes left to right joined by arrows, the last arrow labelled approve.
+
+flowchart LR
+    A[Request] --> B[Draft]
+    B -->|approve| C[Merge]

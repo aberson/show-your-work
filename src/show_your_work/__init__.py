@@ -1,8 +1,9 @@
 """show-your-work -- scaffold, validate and render a per-project ``docs/workflows/`` folder.
 
-Public surface so far: the single header parser in :mod:`show_your_work.header` and the CLI
-entry point in :mod:`show_your_work.cli`. ``check`` / ``render`` / ``init`` land in later build
-steps (``docs/plans/master_plan.md`` section 11).
+Package-level exports so far: the single header parser (:mod:`show_your_work.header`). Other
+modules: the ``check`` logic in :mod:`show_your_work.checks`, the optional renderer wrapper in
+:mod:`show_your_work.renderer` and the CLI entry point in :mod:`show_your_work.cli`. ``render``
+and ``init`` land in later build steps (``docs/plans/master_plan.md`` section 11).
 """
 
 from __future__ import annotations

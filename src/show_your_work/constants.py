@@ -126,6 +126,47 @@ MAX_NODE_LABEL: Final = 60
 MAX_EDGE_LABEL: Final = 40
 MAX_SUBGRAPHS: Final = 2
 
+#: The budget as reported in the ``--json`` summary (section 4 key names, deterministic order).
+BUDGET: Final[Mapping[str, int]] = MappingProxyType(
+    {
+        "nodes": MAX_NODES,
+        "edges": MAX_EDGES,
+        "node_label": MAX_NODE_LABEL,
+        "edge_label": MAX_EDGE_LABEL,
+        "subgraphs": MAX_SUBGRAPHS,
+    }
+)
+
+#: The human summary line (section 4); ``{passed}`` / ``{total}`` are filled per run.
+SUMMARY_LINE: Final = (
+    f"{{passed}}/{{total}} pass (budget: <={MAX_NODES} nodes, <={MAX_EDGES} edges, "
+    f"node label <={MAX_NODE_LABEL}, edge label <={MAX_EDGE_LABEL}, "
+    f"<={MAX_SUBGRAPHS} subgraphs)"
+)
+
+#: Printed whenever ``check`` runs without ``--render``: node/edge counts are never silently passed.
+COUNTS_NOTE: Final = (
+    "NOTE: node/edge counts are exact only under --render (mermaidx); "
+    "without it they show '-' and the node/edge budget is not checked"
+)
+
+#: A ``render-error`` message keeps at most this many characters of the renderer's error text.
+MAX_RENDER_ERROR_DETAIL: Final = 200
+
+#: Shown in the human table for a count that was not rendered (``null`` in ``--json``).
+COUNT_NOT_RENDERED: Final = "-"
+
+#: Importable name of the optional pinned renderer (extra ``render``; the pin lives in pyproject).
+RENDERER_MODULE: Final = "mermaidx"
+
+#: Largest ``.mmd`` file ``check`` will read; a larger one makes the gate exit 2 (section 4: the
+#: gate cannot run safely on it) rather than reading an unbounded attacker-sized file.
+MAX_SOURCE_BYTES: Final = 256 * 1024
+
+#: Known-good render anchor: rendering this MUST succeed and yield at least one node, so a
+#: renderer that raises on everything cannot pass the garbage anchor (good + garbage calibration).
+KNOWN_GOOD: Final = "flowchart LR\n    A[Start] --> B[End]\n"
+
 #: Known-garbage render anchor: rendering this MUST raise (carried verbatim).
 GARBAGE: Final = (
     "flowchart LR\n    A[unclosed --> ((( )))\n    ->> %%%% not a diagram\n    subgraph\n"
@@ -136,22 +177,31 @@ SVG_NODE_RE: Final = re.compile(r'class="[^"]*\bnode\b[^"]*"')
 SVG_EDGE_RE: Final = re.compile(r'class="[^"]*\b(?:edge-thickness|flowchart-link)\b[^"]*"')
 SVG_EDGE_FALLBACK_RE: Final = re.compile(r'\bid="L[_-]')
 
-#: Source label-length regexes, applied to the body (non-``%%`` lines).
+#: Source label-length regexes, applied to the body (non-``%%`` lines). These are the
+#: ``check_diagrams.py`` originals (plan section 3.3) with two linear-time changes: the quoted
+#: node-label pattern is tried only from the FIRST bracket of a run (the lookbehind; any match
+#: must consume the whole run anyway, so results are identical -- without it a run of ``[(`` is
+#: quadratic), and the pipe edge label is one line-bounded capture (the original's ``\s*`` /
+#: lazy-class / ``\s*`` overlap backtracked cubically on ``|`` + spaces). Quoted captures still
+#: cross newlines, as in the originals: a multi-line quoted label is measured. Captured text is
+#: stripped of whitespace and quotes (``LABEL_STRIP_CHARS``) before its length is compared.
 NODE_LABEL_RES: Final[tuple[re.Pattern[str], ...]] = tuple(
     [
-        re.compile(r'[\[\(\{]+\s*"([^"]*)"\s*[\]\)\}]+'),
+        re.compile(r'(?<![\[\(\{])[\[\(\{]+\s*"([^"]*)"\s*[\]\)\}]+'),
         re.compile(r'\[([^"\[\]\n]+)\]'),
     ]
 )
 EDGE_LABEL_RES: Final[tuple[re.Pattern[str], ...]] = tuple(
     [
-        re.compile(r'\|\s*"?([^"|\n]+?)"?\s*\|'),
+        re.compile(r"\|([^|\n]+)\|"),
         re.compile(r'--\s+"([^"]+)"\s+-->'),
         re.compile(r'-\.\s+"([^"]+)"\s+\.->'),
     ]
 )
-SUBGRAPH_RE: Final = re.compile(r"^\s*subgraph\b", re.M)
-SUBGRAPH_END_RE: Final = re.compile(r"^\s*end\s*$", re.M)
+#: Characters stripped from both ends of a captured label before measuring it.
+LABEL_STRIP_CHARS: Final = ' \t"'
+SUBGRAPH_RE: Final = re.compile(r"^[ \t]*subgraph\b", re.M)
+SUBGRAPH_END_RE: Final = re.compile(r"^[ \t]*end[ \t]*$", re.M)
 
 # ---------------------------------------------------------------------------
 # Schema strings (sections 3.4 and 4)
@@ -159,6 +209,41 @@ SUBGRAPH_END_RE: Final = re.compile(r"^\s*end\s*$", re.M)
 
 INDEX_SCHEMA: Final = "show-your-work.workflows.v1"
 REPORT_SCHEMA: Final = "show-your-work.report.v1"
+
+# ---------------------------------------------------------------------------
+# CLI target resolution and gate messages (section 4)
+# ---------------------------------------------------------------------------
+
+#: Default TARGET, relative to cwd: ``./docs/workflows``.
+DEFAULT_TARGET_PARTS: Final[tuple[str, ...]] = tuple(["docs", "workflows"])
+
+#: Exit 2 when no TARGET is given and cwd has no ``docs/workflows`` (documented in section 4).
+MSG_NO_DEFAULT_TARGET: Final = (
+    "no docs/workflows at {path}; pass a target or run 'show-your-work init'"
+)
+#: Exit 2 when an explicit TARGET is missing or is not a directory.
+MSG_TARGET_NOT_DIR: Final = "target is not a directory: {path}"
+#: Exit 2 when TARGET holds no top-level ``*.mmd`` file.
+MSG_NO_SOURCES: Final = "no *.mmd files in {path}"
+#: Exit 2 for ``--render`` (and later ``--png``) when the optional renderer is not importable.
+MSG_RENDERER_MISSING: Final = (
+    "mermaidx is not installed; --render needs the optional 'render' extra (uv sync --extra render)"
+)
+#: Exit 2 when the render anchors fail (DD5): garbage rendered, or known-good did not render.
+MSG_ANCHOR_BROKEN: Final = (
+    "renderer anchor broken: the known-garbage fixture must raise and a known-good diagram "
+    "must render; no render result can be trusted"
+)
+#: Exit 2 when the optional renderer is installed but fails to import or initialise.
+MSG_RENDERER_BROKEN: Final = "mermaidx failed to load ({reason}); --render cannot run"
+#: Exit 2 when TARGET or a source cannot be listed or read (permissions, locks, I/O errors).
+MSG_CANNOT_READ: Final = "cannot read {path}: {reason}"
+#: Exit 2 for a symlinked source: ``check`` never follows a link out of TARGET.
+MSG_SYMLINK_SOURCE: Final = "refusing to read symlinked source {path}"
+#: Exit 2 for a source larger than ``MAX_SOURCE_BYTES``.
+MSG_SOURCE_TOO_LARGE: Final = (
+    f"source {{path}} is larger than {MAX_SOURCE_BYTES} bytes; refusing to read it"
+)
 
 # ---------------------------------------------------------------------------
 # Finding codes (section 4) -- stable strings, defined once
