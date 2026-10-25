@@ -1,5 +1,7 @@
 # show-your-work
 
+**Phase 1 complete** — issues #2–8 closed. `init`, `check`, `render` and `render --png` shipped and dogfooded on this repo's own `docs/workflows/`. 284 tests passing, 0 type errors, 0 lint violations.
+
 ## Description
 
 `show-your-work` is a local-first command-line tool that owns one small standard: a

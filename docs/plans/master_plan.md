@@ -211,7 +211,8 @@ show-your-work/tests/fixtures/
 
 Console script `show-your-work`. Every verb takes an optional positional `TARGET` directory
 (default: `./docs/workflows` resolved from cwd; if cwd has no `docs/workflows`, exit 2 with the
-message `no docs/workflows at <abs path>; pass a target or run 'show-your-work init'`).
+message `no docs/workflows at <abs path>; pass a target or run 'show-your-work init'`) — except
+`init`, which creates the default target when it is missing (built behavior, 2026-10-24).
 Discovery is **top-level only** (`TARGET/*.mmd`, non-recursive), so `rasters/` and nested fixture
 folders are never scanned. Every usage error — unknown verb, unknown flag, missing value — exits
 **64**: argparse's own default for usage errors is 2, which would collide with "gate could not
@@ -220,8 +221,8 @@ run", so `cli.py` overrides `ArgumentParser.error` to exit 64.
 | Verb | Behavior | Exit codes |
 |---|---|---|
 | `init [TARGET] [--force]` | Create `TARGET` if missing; write `intro.md` and `example-workflow.mmd` from templates **only where absent** (never overwrite; `--force` overwrites template-origin files only); then run `check` and `render` on the result. | 0 scaffolded; 1 check failed on the scaffolded set (should be impossible — a test pins it); 2 target is a file / unwritable |
-| `check [TARGET] [--render] [--json]` | Header contract, ASCII, abs-path, label budget, subgraph balance, excalidraw orphan check, id grammar, duplicate ids. `--render` adds real mermaid render + exact node/edge counts via `mermaidx`; **before** any file, renders the embedded garbage fixture and aborts with exit 2 if it does NOT raise. | 0 all pass; 1 >= 1 file fails; 2 gate could not run (no `.mmd` files, `--render` without mermaidx, anchor broken) |
-| `render [TARGET] [--check] [--png] [--json]` | Regenerate `README.md` + `workflows.json`. `--check`: write nothing, exit 1 if either is stale. `--png`: also write `rasters/<id>-{light,dark}.png` via mermaidx and fill `rasters`. Runs `check` first (without `--render` unless `--png`); refuses to render a failing set. | 0 written / up to date; 1 stale (`--check`) or check failed; 2 cannot run (`--png` without mermaidx, anchor broken) |
+| `check [TARGET] [--render] [--json]` | Header contract, ASCII, abs-path, label budget, subgraph balance, excalidraw orphan check, id grammar, duplicate ids. `--render` adds real mermaid render + exact node/edge counts via `mermaidx`; **before** any file, renders the embedded garbage fixture and aborts with exit 2 if it does NOT raise. | 0 all pass; 1 >= 1 file fails; 2 gate could not run (no `.mmd` files, `--render` without mermaidx, anchor broken, a source that is symlinked, unreadable or over the 256 KiB `MAX_SOURCE_BYTES` cap) |
+| `render [TARGET] [--check] [--png] [--json]` | Regenerate `README.md` + `workflows.json`. `--check`: write nothing, exit 1 if either is stale. `--png`: also write `rasters/<id>-{light,dark}.png` via mermaidx and fill `rasters`. Runs `check` first (without `--render` unless `--png`); refuses to render a failing set. | 0 written / up to date; 1 stale (`--check`) or check failed; 2 cannot run (`--png` without mermaidx, anchor broken, a raster canvas over the cap of 16384 px per side or 50 Mpx, `rasters/` not a plain directory, a write failure) |
 
 Human output is a fixed-width table (one row per file) plus a summary line
 `N/M pass (budget: <=14 nodes, <=20 edges, node label <=60, edge label <=40, <=2 subgraphs)`.
@@ -532,6 +533,43 @@ step runs the FULL suite: `uv run pytest -q`, `uv run ruff check .`, `uv run ruf
   | Observatory plan | Unchanged by this program; amendment goes through its own plan-feature later |
 
 Please run M1 next (after `/build-phase` completes).
+
+---
+
+## Phase 1 — show-your-work v1 (automated Steps 1-7)
+
+**All 7 automated-step issues closed (#2-#8). 284/284 tests passing (4 skipped: Windows symlink privilege). Zero type errors. Zero lint violations.** Manual M1 (#9) and M2 (#10) remain an operator handoff; umbrella #1 stays open until they land.
+
+### What was built
+
+- Package skeleton, `constants.py` (the one home for data-shape constants and every regex), and the single header parser `header.py`
+- `check` verb: top-level discovery, id grammar, excalidraw orphans, header, ASCII/abs-path, label budget, subgraph balance, optional real render behind a garbage + known-good anchor; source-size (256 KiB) and symlink guards
+- `render` verb: generated `README.md` + `workflows.json` (`show-your-work.workflows.v1`), `--check` with `generated_at`/`rasters` masking
+- `init` verb with marker-based `--force`; templates shipped in the wheel; this repo dogfoods `docs/workflows/`
+- Synthetic realistic fixtures, a read-only live coding-root test (pre-M1 branch verified, 7 diagrams), and `docs/migration-coding-root.md`
+- `render --png`: light/dark rasters at scale 2 via pinned mermaidx, hashes in the index, orphan-PNG deletion under the section 4 rules, canvas cap (16384 px/side, 50 Mpx)
+- `README.md`, `utility-project.toml` (`standalone-cli` / `public` / `experimental`), `docs/observatory-amendment.md` (M2 issue body, public sources only)
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `pyproject.toml`, `uv.lock`, `LICENSE`, `.gitattributes` | Package metadata, extras `dev`/`render`, wheel `force-include` for templates, LF/CRLF fixture pins |
+| `src/show_your_work/{constants,header,checks,renderer,render,scaffold,cli}.py` | The CLI and its modules |
+| `templates/workflows/{intro.md,example-workflow.mmd}` | `init` templates |
+| `tests/` (`test_header`, `test_cli`, `test_checks`, `test_render`, `test_regex_linear`, `test_scaffold`, `test_realistic_fixture`, `test_live_coding_root`, `test_png`, `fakes.py`) + `tests/fixtures/{bad-headers,garbage,good,over-budget,realistic}` | Suite (284 tests) |
+| `docs/workflows/` | Dogfooded `init` output |
+| `README.md`, `utility-project.toml`, `docs/migration-coding-root.md`, `docs/observatory-amendment.md`, `CLAUDE.md` | Docs and conformance |
+
+### Fresh context notes for Phase 1
+
+| Issue | Detail |
+|---|---|
+| Spec amendments at build time | Section 3.4 / D14: a plain `render` preserves a raster entry only while both files still match its `sha256` + `bytes`. Step 6 Done-when: IHDR = `2 x round_half_up(viewBox)` (pinned resvg rounds before zooming). |
+| Regex linearity is enforced | `tests/test_regex_linear.py` discovers every compiled pattern in `constants` and times it on ~64 KB hostile inputs; any new regex must stay linear. |
+| `pytest -q` prints no summary | The project config suppresses the summary line; count results from the progress dots or use `-rs`. |
+| Raster hashes across machines | mermaidx 0.9.5 skips system fonts and uses its bundled DejaVu, so hashes may be stable, but this is unverified on a second machine. |
+| P6 | Public machinery, private data: no coding-root diagram content, private plan text or absolute paths in tracked files; `utility-standard audit-publication .` passes. |
 
 ## 12. Appendix
 

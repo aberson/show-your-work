@@ -58,7 +58,7 @@ codes: 0 pass, 1 findings or stale, 2 gate could not run, 64 usage.
 
 ## Current state
 
-Automated Steps 1-7 built (2026-10-24): `init` / `check` / `render` (+ `--render`, `--png`), templates, dogfooded `docs/workflows/`, README and standard conformance. Next is the operator handoff in plan order: M1 "Migrate `dev/docs/workflows/` to the standard" (`docs/migration-coding-root.md`), then M2 "File the dev-observatory plan amendment" (`docs/observatory-amendment.md`).
+Phase 1 complete — automated Steps 1-7 built (2026-10-24; issues #2-#8 closed, 284 tests): `init` / `check` / `render` (+ `--render`, `--png`), templates, dogfooded `docs/workflows/`, README and standard conformance. Next is the operator handoff in plan order: M1 "Migrate `dev/docs/workflows/` to the standard" (`docs/migration-coding-root.md`), then M2 "File the dev-observatory plan amendment" (`docs/observatory-amendment.md`).
 
 ## Environment
 
