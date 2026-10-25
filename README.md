@@ -15,6 +15,11 @@ this repository is only the template, the validator and the generator. The `init
 `render` verbs use the Python standard library alone; rendering through mermaid needs the
 optional, exactly pinned `mermaidx` renderer.
 
+One real consumer is Skill Mesh's
+[workflow diagram catalog](https://github.com/aberson/skill-mesh/tree/main/docs/workflows), which
+uses this folder contract for 57 diagrams. `show-your-work` is an authoring and validation
+dependency for that documentation; installed Skill Mesh skills do not need it at runtime.
+
 ## Why
 
 Workflow diagrams drift. Someone draws a picture of how a pipeline works, the pipeline changes,
