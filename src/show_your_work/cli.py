@@ -326,7 +326,10 @@ def build_parser() -> UsageExitParser:
         "--check", action="store_true", help="write nothing; exit 1 when output is stale"
     )
     render_parser.add_argument(
-        "--png", action="store_true", help="also write light/dark PNG rasters via mermaidx"
+        "--png",
+        action="store_true",
+        help="also write light/dark PNG rasters: via mermaidx, or from the house SVGs for a "
+        "diagram with a layout sidecar",
     )
     render_parser.add_argument("--json", action="store_true", help="emit a JSON report")
     render_parser.set_defaults(handler=_run_render)

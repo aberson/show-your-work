@@ -543,7 +543,7 @@ def test_plain_render_nulls_an_entry_whose_file_changed_on_disk(
     assert main(["render", str(target)]) == EXIT_OK
     assert "workflows.json: written" in capsys.readouterr().out
     assert _index(target)["items"][0]["rasters"] is None
-    assert light.read_bytes() == tampered  # plain render never rewrites or deletes rasters
+    assert light.read_bytes() == tampered  # plain render never rewrites or deletes PNG rasters
     assert main(["render", str(target), "--check"]) == EXIT_OK
 
     assert main(["render", str(target), "--png"]) == EXIT_OK

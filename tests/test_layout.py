@@ -4,7 +4,9 @@ Every Done-when of Step 8 runs through the production caller ``cli.main``; the r
 each 2.4 rule and its boundary through :func:`show_your_work.layout.layout_findings` /
 :func:`show_your_work.layout.parse_layout`. Fixtures are synthetic. An invalid or bound fixture is
 only a sidecar: the test copies ``valid/flow.mmd`` beside it in a tmp folder (every bound fixture
-pins that file's hash, so the one rule it breaks is the only finding).
+pins that file's hash, so the one rule it breaks is the only finding). The last tests pin the
+README "Layout sidecar" section (Step 11): its example passes ``check`` beside the ``init`` template
+diagram, equals this repo's dogfooded sidecar, and the section names every ``layout-*`` code.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from show_your_work.constants import (
     CODE_LAYOUT_INVALID,
     CODE_LAYOUT_ORPHAN,
     CODE_LAYOUT_STALE,
+    EXAMPLE_NAME,
     EXIT_FINDINGS,
     EXIT_GATE,
     EXIT_OK,
@@ -36,6 +39,7 @@ from show_your_work.constants import (
     LANE_LABEL_CHARS_TEXT,
     LANE_LABEL_RE,
     LAYOUT_SCHEMA,
+    LAYOUT_SUFFIX,
     MAX_ALT,
     MAX_BRANCH_LABEL,
     MAX_LANE_LABEL,
@@ -48,6 +52,7 @@ from show_your_work.constants import (
     MAX_NODE_SUB,
     MAX_REJOIN_LABEL,
     MIN_LAYOUT_LANES,
+    SOURCE_SUFFIX,
 )
 from show_your_work.layout import Layout, LayoutError, layout_findings, parse_layout
 from tests.fakes import (
@@ -65,6 +70,14 @@ INVALID = LAYOUT / "invalid"
 BOUND = LAYOUT / "bound"
 ORPHAN = LAYOUT / "orphan"
 PHASE1 = LAYOUT / "phase1"
+REPO = Path(__file__).resolve().parents[1]
+TEMPLATES = REPO / "templates" / "workflows"
+DOGFOOD = REPO / "docs" / "workflows"
+#: The project README, whose sidecar section carries the documented example (plan section 2.6).
+README = REPO / "README.md"
+README_SECTION_ANCHOR = "### Layout sidecar"  # anchor: the README heading of that section
+#: The sidecar of the ``init`` template diagram, which the README example pins.
+EXAMPLE_SIDECAR = EXAMPLE_NAME.removesuffix(SOURCE_SUFFIX) + LAYOUT_SUFFIX
 
 FLOW_MMD = (VALID / "flow.mmd").read_bytes()
 FLOW_LAYOUT: dict[str, Any] = json.loads((VALID / "flow.layout.json").read_bytes())
@@ -775,3 +788,49 @@ def test_layout_fixtures_are_lf_and_bound_fixtures_pin_the_flow_hash() -> None:
     assert FLOW_LAYOUT["source_sha256"] == flow_hash
     for path in sorted(BOUND.glob("*.layout.json")):
         assert json.loads(path.read_bytes())["source_sha256"] == flow_hash, path.name
+
+
+# --- the README "Layout sidecar" example (plan section 2.6, Step 11) -------------------------
+
+
+def _readme_section() -> str:
+    """The README "Layout sidecar" section, LF-normalized, up to the next ``##`` heading."""
+    text = README.read_bytes().decode("utf-8").replace("\r\n", "\n")
+    return text.split(f"\n{README_SECTION_ANCHOR}\n", 1)[1].split("\n## ", 1)[0]
+
+
+def _readme_example() -> bytes:
+    """The section's ``json`` fence: the documented example sidecar, as LF bytes."""
+    body = _readme_section().split("\n```json\n", 1)[1].split("\n```\n", 1)[0]
+    return f"{body}\n".encode("ascii")
+
+
+def test_readme_example_sidecar_passes_check_beside_the_template_diagram(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The documented example passes ``check`` beside the ``init`` template diagram it pins.
+
+    One appended line in that diagram then reports ``layout-stale``, so the pass is not vacuous:
+    the sidecar really was read and validated.
+    """
+    folder = tmp_path / "workflows"
+    folder.mkdir()
+    shutil.copyfile(TEMPLATES / EXAMPLE_NAME, folder / EXAMPLE_NAME)
+    (folder / EXAMPLE_SIDECAR).write_bytes(_readme_example())
+    assert main(["check", str(folder), "--json"]) == EXIT_OK
+    assert finding_codes(_rows(capsys)[EXAMPLE_NAME]) == []
+
+    with (folder / EXAMPLE_NAME).open("ab") as source:
+        source.write(b"%% edited\n")
+    assert main(["check", str(folder), "--json"]) == EXIT_FINDINGS
+    assert finding_codes(_rows(capsys)[EXAMPLE_NAME]) == [CODE_LAYOUT_STALE]
+
+
+def test_readme_example_sidecar_is_the_dogfooded_sidecar() -> None:
+    assert _readme_example() == (DOGFOOD / EXAMPLE_SIDECAR).read_bytes().replace(b"\r\n", b"\n")
+
+
+def test_readme_layout_section_names_every_layout_code() -> None:
+    section = _readme_section()
+    for code in (CODE_LAYOUT_INVALID, CODE_LAYOUT_BOUND, CODE_LAYOUT_STALE, CODE_LAYOUT_ORPHAN):
+        assert f"`{code}`" in section, code

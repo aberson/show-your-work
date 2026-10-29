@@ -1,0 +1,66 @@
+{
+  "schema": "show-your-work.layout.v1",
+  "source_sha256": "647acd30a273186647d2e8fa0af7daef065bb8230c365b3db2935ac75242056d",
+  "alt": "Three columns joined by a spine: idea and write the change, then run the checks and review, then merge; a dashed return labelled changes requested runs from review back to write the change.",
+  "lanes": [
+    {
+      "label": "AUTHOR",
+      "in": 0,
+      "out": 1,
+      "nodes": [
+        {
+          "name": "Idea",
+          "sub": "a problem worth fixing",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Write the change",
+          "sub": "small and focused",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    },
+    {
+      "label": "VERIFY",
+      "in": 0,
+      "out": 1,
+      "nodes": [
+        {
+          "name": "Run the checks",
+          "sub": "tests and linters",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Review",
+          "sub": "approved or not",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    },
+    {
+      "label": "MERGE",
+      "in": 0,
+      "out": 0,
+      "nodes": [
+        {
+          "name": "Merge",
+          "sub": "",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    }
+  ],
+  "loops": [],
+  "rejoin": {
+    "from_lane": 1,
+    "from_node": 1,
+    "to_lane": 0,
+    "to_node": 1,
+    "label": "changes requested"
+  }
+}

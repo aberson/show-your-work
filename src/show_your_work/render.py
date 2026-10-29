@@ -12,9 +12,10 @@
   section 3.4, items sorted by id, ``source_dir`` / ``source_path`` relative to the nearest
   ``.git`` ancestor (never cwd), ``source_sha256`` over CRLF-normalized bytes, ``engine`` from an
   ``<id>.excalidraw.svg`` sibling, and ``rasters`` preserved from the previous index only when
-  both referenced files still exist (``null`` otherwise; PNG raster files are never deleted here)
-  and are house PNGs exactly when the diagram has a sidecar (plan section 12.D). While a sidecar
-  diagram's ``rasters`` are house entries its ``alt`` is the layout ``alt``.
+  both referenced files still exist, still match the entry's ``sha256`` and ``bytes``, and are
+  house PNGs exactly when the diagram has a sidecar (``null`` otherwise; plan section 12.D). A
+  plain render never deletes PNG raster files. While a sidecar diagram's ``rasters`` are house
+  entries its ``alt`` is the layout ``alt``.
 * ``rasters/<id>-{light,dark}.svg`` -- the house SVGs of every diagram with a ``<id>.layout.json``
   sidecar (plan section 2.5), embedded in its README section through ``<picture>``. They are
   written before the README and index; an orphan house SVG (a regular top-level ``*-light.svg`` /
@@ -37,14 +38,14 @@ diagram from its house SVG with the bundled fonts, tagged as a house PNG (plan s
 10). Only then are ``rasters/<id>-<theme>.png`` written (byte-identical files are left alone), then
 ``README.md`` / ``workflows.json`` with ``rasters`` filled from the fresh bytes (``path``,
 ``sha256``, ``width`` / ``height`` from the PNG's IHDR, ``bytes``), and LAST the orphan
-PNGs are deleted under the section 4 safety rules (only regular ``*.png`` files directly inside
-``rasters/`` that the new index does not reference: never recursing, never following a symlink,
-never touching another file type). An interrupted run therefore never leaves an index naming a
-deleted file, and a raster rewritten before the index was is caught by the strict
-preserved-or-null rule on the next plain ``render``. Every canvas is checked against the pixel
-caps (``MAX_RASTER_SIDE`` / ``MAX_RASTER_PIXELS``) before it is rasterized; over the cap is exit
-2 with nothing written. ``check_only`` with a rasterizer writes and deletes nothing and compares
-rasters unmasked, reporting each raster that would change.
+PNGs and orphan house SVGs are deleted under the section 4 safety rules (an orphan PNG is only a
+regular ``*.png`` file directly inside ``rasters/`` that the new index does not reference: never
+recursing, never following a symlink, never touching another file type). An interrupted run
+therefore never leaves an index naming a deleted file, and a raster rewritten before the index
+was is caught by the strict preserved-or-null rule on the next plain ``render``. Every canvas is
+checked against the pixel caps (``MAX_RASTER_SIDE`` / ``MAX_RASTER_PIXELS``) before it is
+rasterized; over the cap is exit 2 with nothing written. ``check_only`` with a rasterizer writes
+and deletes nothing and compares rasters unmasked, reporting each raster that would change.
 
 ``sha256_lf`` is a deliberate re-export of :func:`show_your_work.header.sha256_lf` (the one source
 of truth), kept because render owned it in Phase 1 (plan section 2.2).

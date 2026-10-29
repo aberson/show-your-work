@@ -1,6 +1,6 @@
 <!-- GENERATED FILE - DO NOT EDIT.
-     Produced by `show-your-work render` from intro.md and the .mmd
-     files in this directory. Edit those and re-run; edits here are overwritten. -->
+     Produced by `show-your-work render` from intro.md, the .mmd files and their .layout.json sidecars in this directory.
+     Edit those and re-run; edits here are overwritten. -->
 # Workflow diagrams
 
 This folder holds the project's workflow diagrams: one mermaid flowchart per `.mmd` file, each
@@ -48,9 +48,16 @@ Drawn from:
 - `docs/workflows/intro.md`
 - `https://mermaid.js.org/syntax/flowchart.html`
 
-**Alt:** Four boxes and one diamond joined left to right by arrows, with an arrow labelled changes requested looping from the review diamond back to the second box.
+**Alt (mermaid source):** Four boxes and one diamond joined left to right by arrows, with an arrow labelled changes requested looping from the review diamond back to the second box.
 
 **Deliberately not shown:** release, deployment and rollback; who may approve a review
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rasters/example-workflow-dark.svg">
+  <img alt="Three columns joined by a spine: idea and write the change, then run the checks and review, then merge; a dashed return labelled changes requested runs from review back to write the change." src="rasters/example-workflow-light.svg">
+</picture>
+
+<details><summary>Mermaid source</summary>
 
 ```mermaid
 %% Example Workflow: Idea to Merged Change
@@ -70,6 +77,8 @@ flowchart LR
 %% show-your-work:template
 ```
 
+</details>
+
 ---
 
 ## Regenerating
@@ -80,5 +89,7 @@ After editing any of them, run from the project root:
 ```
 show-your-work render docs/workflows
 ```
+
+The house-style SVGs in `rasters/` are generated from the `*.layout.json` sidecars by the same command.
 
 `show-your-work render docs/workflows --check` writes nothing and exits 1 when this file or `workflows.json` is out of date.
