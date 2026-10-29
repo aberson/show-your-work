@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>House-Style Layouts Tour</title>
+<meta name="description" content="Phase 2 of show-your-work: opt-in layout sidecars that turn a mermaid workflow into column-and-spine house-style SVGs and PNGs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: one reading column; the pipeline map is drawn in the house style itself (lanes + spine). */
+:root {
+  --bg: #F6F8FC;
+  --card: #FFFFFF;
+  --line: #D4DBE8;
+  --link: #C0C9DA;
+  --spine: #3355E0;
+  --ink: #1B2232;
+  --muted: #6E778C;
+  --ok: #1F7A4D;
+  --display: "Fraunces", Georgia, "Times New Roman", serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, "DejaVu Sans Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E131C; --card: #161C26; --line: #29313F; --link: #384153;
+    --spine: #6E9BFF; --ink: #E6EAF2; --muted: #9AA5B8; --ok: #5CC28E; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E131C; --card: #161C26; --line: #29313F; --link: #384153;
+  --spine: #6E9BFF; --ink: #E6EAF2; --muted: #9AA5B8; --ok: #5CC28E; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 var(--body);
+}
+.wrap {
+  max-width: 920px; margin: 0 auto;
+  padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 48px;
+}
+header { display: grid; gap: 12px; }
+.eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 600 clamp(2rem, 5vw, 3rem)/1.1 var(--display); margin: 0; text-wrap: balance; }
+h2 { font: 600 1.5rem/1.2 var(--display); margin: 0 0 16px; text-wrap: balance; }
+h3 { font: 600 1rem/1.3 var(--body); margin: 0; }
+p { margin: 0; max-width: 65ch; }
+.lede { font-size: 1.125rem; color: var(--muted); max-width: 60ch; }
+code { font-family: var(--mono); font-size: .9em; }
+.can { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.can > div { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 6px; min-width: 0; }
+.can p { color: var(--muted); font-size: .95rem; }
+.cmd { font: 400 .85rem/1.5 var(--mono); color: var(--spine); overflow-wrap: anywhere; }
+figure { margin: 0; display: grid; gap: 10px; }
+figcaption { color: var(--muted); font-size: .9rem; max-width: 65ch; }
+.scroll { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.scroll svg, .scroll img { display: block; max-width: none; }
+.map text { font-family: var(--mono); }
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-left: 2px solid var(--spine); }
+ol.steps li { position: relative; padding: 0 0 24px 24px; display: grid; gap: 4px; min-width: 0; }
+ol.steps li::before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); border: 2px solid var(--spine); }
+.stepno { font: 600 12px/1 var(--mono); letter-spacing: .08em; color: var(--muted); }
+.meta { font: 400 .85rem/1.5 var(--mono); color: var(--muted); }
+.pill { display: inline-block; font: 600 11px/1 var(--mono); letter-spacing: .06em; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.pill.pass { color: var(--ok); border-color: var(--ok); }
+table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 12px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); white-space: nowrap; }
+.next { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--spine); border-radius: 10px; padding: 16px; display: grid; gap: 8px; }
+a { color: var(--spine); }
+a:focus-visible { outline: 2px solid var(--spine); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">show-your-work · Phase 2 · 2026-10-29</span>
+  <h1>Workflow diagrams in the house style</h1>
+  <p class="lede">A diagram can now opt in to the column-and-spine look with one small JSON file beside its <code>.mmd</code>. Every <code>render</code> draws light and dark SVGs from it, the folder README shows them, and <code>render --png</code> turns them into rasters with a bundled monospace font.</p>
+</header>
+
+<section>
+  <h2>What you can do now</h2>
+  <div class="can">
+    <div>
+      <h3>Add a layout sidecar</h3>
+      <p>Write <code>&lt;id&gt;.layout.json</code> next to <code>&lt;id&gt;.mmd</code>: 2–6 lanes, 1–4 nodes each, optional loops and one rejoin.</p>
+      <span class="cmd">docs/workflows/build-loop.layout.json</span>
+    </div>
+    <div>
+      <h3>Check it</h3>
+      <p>Bad JSON, out-of-bound labels, a stale source hash or an orphan sidecar each get their own finding code.</p>
+      <span class="cmd">show-your-work check docs/workflows</span>
+    </div>
+    <div>
+      <h3>Render house SVGs</h3>
+      <p>Every render writes <code>rasters/&lt;id&gt;-light.svg</code> and <code>-dark.svg</code> and embeds them in README with a <code>&lt;picture&gt;</code> that follows the GitHub theme.</p>
+      <span class="cmd">show-your-work render docs/workflows</span>
+    </div>
+    <div>
+      <h3>Rasterize them</h3>
+      <p>With the <code>render</code> extra, house PNGs come out at 2× through resvg and the bundled DejaVu Sans Mono, the same on every machine.</p>
+      <span class="cmd">show-your-work render docs/workflows --png</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The result, on this repo's own example</h2>
+  <figure>
+    <div class="scroll">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="../workflows/rasters/example-workflow-dark.svg">
+        <img alt="Three columns joined by a spine: idea and write the change, then run the checks and review, then merge; a dashed return labelled changes requested runs from review back to write the change." src="../workflows/rasters/example-workflow-light.svg" width="720" height="202">
+      </picture>
+    </div>
+    <figcaption>The committed house SVG for <code>docs/workflows/example-workflow</code>, generated by <code>render</code> from <code>example-workflow.layout.json</code> (canvas 720 × 202; the PNG is 1440 × 404).</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>How the pieces connect</h2>
+  <figure>
+    <div class="scroll">
+      <svg class="map" viewBox="0 0 960 236" width="960" height="236" role="img" aria-label="Pipeline map: the INPUT lane holds the .mmd source and the layout sidecar; CHECK validates the header and the sidecar; RENDER draws house SVGs and the README; PNG rasterizes with resvg and tags the PNGs.">
+        <defs>
+          <marker id="tar" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="var(--link)"/></marker>
+          <marker id="tars" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="var(--spine)"/></marker>
+        </defs>
+        <g font-size="11" font-weight="600" letter-spacing="1.3" fill="var(--muted)">
+          <text x="20" y="34">INPUT</text><text x="260" y="34">CHECK</text><text x="500" y="34">RENDER</text><text x="740" y="34">PNG</text>
+        </g>
+        <g stroke="var(--spine)" stroke-width="2.4" fill="none" marker-end="url(#tars)">
+          <path d="M220,73 H258"/><path d="M460,73 H498"/><path d="M700,73 H738"/>
+        </g>
+        <g stroke="var(--link)" stroke-width="1.7" fill="none" marker-end="url(#tar)">
+          <path d="M120,96 V108"/><path d="M360,96 V108"/><path d="M600,96 V108"/><path d="M840,96 V108"/>
+          <path d="M600,156 V168"/>
+        </g>
+        <g fill="var(--card)" stroke="var(--link)" stroke-width="1.4">
+          <rect x="20" y="50" width="200" height="46" rx="10"/><rect x="20" y="110" width="200" height="46" rx="10"/>
+          <rect x="260" y="50" width="200" height="46" rx="10"/><rect x="260" y="110" width="200" height="46" rx="10"/>
+          <rect x="500" y="50" width="200" height="46" rx="10"/><rect x="500" y="110" width="200" height="46" rx="10"/><rect x="500" y="170" width="200" height="46" rx="10"/>
+          <rect x="740" y="50" width="200" height="46" rx="10"/><rect x="740" y="110" width="200" height="46" rx="10"/>
+        </g>
+        <g font-size="13" font-weight="600" fill="var(--spine)">
+          <text x="34" y="71">&lt;id&gt;.mmd</text><text x="34" y="131">&lt;id&gt;.layout.json</text>
+          <text x="274" y="71">header + budget</text><text x="274" y="131">sidecar rules</text>
+          <text x="514" y="71">draw_svg</text><text x="514" y="131">rasters/*.svg</text><text x="514" y="191">README &lt;picture&gt;</text>
+          <text x="754" y="71">resvg + DejaVu</text><text x="754" y="131">tagged PNGs</text>
+        </g>
+        <g font-size="10.5" fill="var(--muted)">
+          <text x="34" y="88">mermaid source</text><text x="34" y="148">lanes, nodes, loops</text>
+          <text x="274" y="88">Phase 1 checks</text><text x="274" y="148">layout-* codes</text>
+          <text x="514" y="88">section 2.5 engine</text><text x="514" y="148">light + dark, LF</text><text x="514" y="208">dark srcset, light src</text>
+          <text x="754" y="88">bundled fonts only</text><text x="754" y="148">tEXt house-v1</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Drawn in the same column-and-spine style the engine produces. A diagram without a sidecar keeps the Phase 1 mermaid path at every stage.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>What shipped, step by step</h2>
+  <ol class="steps">
+    <li>
+      <span class="stepno">STEP 8 · #13 · d0a6045</span>
+      <h3>Layout sidecar contract in <code>check</code></h3>
+      <p>Strict JSON parsing (duplicate keys, NaN, huge integers rejected), every bound from section 2.4, a CRLF-tolerant source hash that pins the sidecar to its <code>.mmd</code>, 64 KiB and symlink gates.</p>
+      <span class="pill">accepted · 1 style nit waived</span>
+    </li>
+    <li>
+      <span class="stepno">STEP 9 · #14 · 5b7fa37</span>
+      <h3>House SVG engine and README embed</h3>
+      <p>A stdlib engine with fixed geometry and per-theme palettes. Generated files carry a marker as their first child, so user files are never overwritten and only marked orphans are deleted.</p>
+      <span class="pill">accepted · 1 style nit waived</span>
+    </li>
+    <li>
+      <span class="stepno">STEP 10 · #15 · c37c2e7</span>
+      <h3>House PNGs with bundled DejaVu Sans Mono</h3>
+      <p>resvg-py 0.5.0 with system fonts skipped, fonts shipped in the wheel with pinned hashes, a tEXt provenance tag, and anchors that fail the run if text would render blank.</p>
+      <span class="pill">accepted · 2 style nits waived</span>
+    </li>
+    <li>
+      <span class="stepno">STEP 11 · #16 · ce6809d</span>
+      <h3>Contract, docs, dogfood and a real <code>--png</code> run</h3>
+      <p>The plan's contract sections updated, a README "Layout sidecar" guide, this repo's example diagram given a sidecar, and an installed-CLI run at exactly 2× the viewBox.</p>
+      <span class="pill pass">pass · first review round</span>
+    </li>
+  </ol>
+</section>
+
+<section>
+  <h2>Where it landed</h2>
+  <div class="scroll" style="padding:0">
+    <table>
+      <thead><tr><th>What</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Branch</td><td><code>main</code>, pushed; <code>origin/main</code> at the Phase 2 wrap commit</td></tr>
+        <tr><td>Commits</td><td class="num">d0a6045 · 5b7fa37 · 6337668 · c37c2e7 · ce6809d · 8daed5c</td></tr>
+        <tr><td>Issues closed</td><td class="num">#13 #14 #15 #16 · posterity #18</td></tr>
+        <tr><td>Tests</td><td class="num">461 passed, 8 skipped (was 284)</td></tr>
+        <tr><td>Type and lint</td><td>mypy --strict, ruff and ruff format clean</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="next">
+  <span class="eyebrow">Your next move</span>
+  <h3>Manual step M3 (#17): try it on the project that reported the defect</h3>
+  <p>In that project, write <code>docs/workflows/build-and-playtest-loop.layout.json</code> from the README "Layout sidecar" section, then run <code>check --render</code> and <code>render --png</code> and confirm the PNG shows white pills, a blue spine and the dashed playtest-to-build return. M1 (#9) and M2 (#10) from Phase 1 are still open too.</p>
+</section>
+
+</div>
+</body>
+</html>
