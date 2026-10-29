@@ -17,3 +17,7 @@ templates/workflows/* text eol=lf
 docs/workflows/*.mmd text eol=lf
 docs/workflows/*.md text eol=lf
 docs/workflows/*.json text eol=lf
+# Bundled DejaVu fonts for house PNG rasters (plan Phase 2 section 2.6, Step 10): byte-exact
+# (pinned SHA-256s), never converted.
+src/show_your_work/fonts/*.ttf binary
+src/show_your_work/fonts/LICENSE-DejaVu.txt -text

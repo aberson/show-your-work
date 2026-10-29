@@ -12,7 +12,9 @@
   section 3.4, items sorted by id, ``source_dir`` / ``source_path`` relative to the nearest
   ``.git`` ancestor (never cwd), ``source_sha256`` over CRLF-normalized bytes, ``engine`` from an
   ``<id>.excalidraw.svg`` sibling, and ``rasters`` preserved from the previous index only when
-  both referenced files still exist (``null`` otherwise; PNG raster files are never deleted here).
+  both referenced files still exist (``null`` otherwise; PNG raster files are never deleted here)
+  and are house PNGs exactly when the diagram has a sidecar (plan section 12.D). While a sidecar
+  diagram's ``rasters`` are house entries its ``alt`` is the layout ``alt``.
 * ``rasters/<id>-{light,dark}.svg`` -- the house SVGs of every diagram with a ``<id>.layout.json``
   sidecar (plan section 2.5), embedded in its README section through ``<picture>``. They are
   written before the README and index; an orphan house SVG (a regular top-level ``*-light.svg`` /
@@ -29,10 +31,12 @@ changes no bytes. ``check_only`` (``render --check``) writes nothing and also ma
 
 With a ``rasterizer`` (``render --png``, section 4) the check runs WITH that renderer, so the
 garbage / known-good anchors run before any file is read; then the anchors run again through the
-raster path, and every diagram is rasterized for both themes IN MEMORY before anything is
-written. Only then are ``rasters/<id>-<theme>.png`` written (byte-identical files are left
-alone), then ``README.md`` / ``workflows.json`` with ``rasters`` filled from the fresh bytes
-(``path``, ``sha256``, ``width`` / ``height`` from the PNG's IHDR, ``bytes``), and LAST the orphan
+raster path (when a diagram has no sidecar) and the house anchors run (when one has one),
+and every diagram is rasterized for both themes IN MEMORY before anything is written: a sidecar
+diagram from its house SVG with the bundled fonts, tagged as a house PNG (plan section 2.6 Step
+10). Only then are ``rasters/<id>-<theme>.png`` written (byte-identical files are left alone), then
+``README.md`` / ``workflows.json`` with ``rasters`` filled from the fresh bytes (``path``,
+``sha256``, ``width`` / ``height`` from the PNG's IHDR, ``bytes``), and LAST the orphan
 PNGs are deleted under the section 4 safety rules (only regular ``*.png`` files directly inside
 ``rasters/`` that the new index does not reference: never recursing, never following a symlink,
 never touching another file type). An interrupted run therefore never leaves an index naming a
@@ -109,6 +113,7 @@ from show_your_work.constants import (
     MSG_CANNOT_DELETE,
     MSG_CANNOT_READ,
     MSG_CANNOT_WRITE,
+    MSG_HOUSE_ANCHOR_BROKEN,
     MSG_INTRO_NOT_UTF8,
     MSG_RASTER_FAILED,
     MSG_RASTERS_NOT_DIR,
@@ -531,13 +536,16 @@ def house_svg_path(diagram_id: str, theme: str) -> str:
 
 
 def _raster_entry(
-    diagram_id: str, theme: str, entry: object, target: Path
+    diagram_id: str, theme: str, entry: object, target: Path, *, house: bool
 ) -> dict[str, Any] | None:
     """A previous ``rasters.<theme>`` entry rebuilt with the exact key set, or ``None``.
 
     Section 3.4's preserved-or-null rule, read strictly: the entry survives only while the file
     it names still exists AND still matches it (``bytes`` and ``sha256`` of the on-disk file), so
-    a raster changed or replaced on disk is never re-published under its old hash.
+    a raster changed or replaced on disk is never re-published under its old hash. The house
+    provenance rule (plan section 12.D) narrows it further: the file must be a house PNG exactly
+    when ``house`` (the diagram has a sidecar), so adding or removing a sidecar nulls the entry
+    until ``--png``.
     """
     if not isinstance(entry, dict):
         return None
@@ -556,13 +564,18 @@ def _raster_entry(
         return None
     if hashlib.sha256(on_disk).hexdigest() != digest:
         return None
+    if renderer_mod.is_house_png(on_disk) != house:
+        return None
     return dict(zip(RASTER_ENTRY_KEYS, (path, digest, *dims), strict=True))
 
 
 def _preserved_rasters(
-    diagram_id: str, previous: dict[str, Any] | None, target: Path
+    diagram_id: str, previous: dict[str, Any] | None, target: Path, *, house: bool
 ) -> dict[str, Any] | None:
-    """Section 3.4: keep a previous item's ``rasters`` only when BOTH files still exist."""
+    """Section 3.4: keep a previous item's ``rasters`` only when BOTH files still exist.
+
+    ``house`` (the diagram has a sidecar) is the provenance both files must carry.
+    """
     if previous is None:
         return None
     items = previous.get(INDEX_ITEMS)
@@ -574,7 +587,10 @@ def _preserved_rasters(
         rasters = item.get(INDEX_ITEM_RASTERS)
         if not isinstance(rasters, dict):
             return None
-        entries = {t: _raster_entry(diagram_id, t, rasters.get(t), target) for t in RASTER_THEMES}
+        entries = {
+            t: _raster_entry(diagram_id, t, rasters.get(t), target, house=house)
+            for t in RASTER_THEMES
+        }
         if any(entry is None for entry in entries.values()):
             return None
         return entries
@@ -594,7 +610,8 @@ def build_index(
 
     ``rasters`` (id -> freshly rendered entries, ``render --png``) wins when given. Otherwise
     ``previous`` (the parsed existing index) and ``target`` feed the rasters preserved-or-null
-    rule; without them every ``rasters`` is ``null``.
+    rule; without them every ``rasters`` is ``null``. While a sidecar diagram's ``rasters`` are
+    house entries its ``alt`` is the layout ``alt``, else the header Alt.
     """
     if generated_at.utcoffset() != timedelta(0):
         raise ValueError(MSG_STAMP_NOT_UTC)
@@ -603,14 +620,15 @@ def build_index(
         if rasters is not None:
             item_rasters: dict[str, Any] | None = rasters[d.id]
         elif target is not None:
-            item_rasters = _preserved_rasters(d.id, previous, target)
+            item_rasters = _preserved_rasters(d.id, previous, target, house=d.layout is not None)
         else:
             item_rasters = None
+        alt = d.header.alt if d.layout is None or item_rasters is None else d.layout.alt
         values = (
             d.id,
             d.header.title,
             d.header.summary,
-            d.header.alt,
+            alt,
             d.header.not_shown,
             list(d.header.sources),
             _source_path(source_dir, d.id),
@@ -703,19 +721,27 @@ def write_atomic(path: Path, text: str | bytes, *, mode: int | None = None) -> N
 
 
 def _render_rasters(
-    diagrams: Sequence[Diagram], rasterizer: RasterRenderer
+    diagrams: Sequence[Diagram],
+    rasterizer: RasterRenderer,
+    svgs: Mapping[str, Mapping[str, str]],
 ) -> dict[str, dict[str, bytes]]:
     """Every diagram x theme rasterized IN MEMORY (nothing is written until all succeed).
 
-    :func:`show_your_work.renderer.png` checks each canvas against the pixel caps before the
-    native rasterizer runs; an over-cap canvas, a renderer fault or a non-PNG result is exit 2.
+    A sidecar diagram rasterizes its house SVG from ``svgs`` through
+    :func:`show_your_work.renderer.house_png` (tagged), any other diagram its mermaid source
+    through :func:`show_your_work.renderer.png`. Both check each canvas against the pixel caps
+    before the native rasterizer runs; an over-cap canvas, a renderer fault or a non-PNG result is
+    exit 2.
     """
     rendered: dict[str, dict[str, bytes]] = {}
     for diagram in diagrams:
         per_theme: dict[str, bytes] = {}
         for theme in RASTER_THEMES:
             try:
-                data = renderer_mod.png(rasterizer, diagram.text, theme)
+                if diagram.layout is None:
+                    data = renderer_mod.png(rasterizer, diagram.text, theme)
+                else:
+                    data = renderer_mod.house_png(svgs[diagram.id][theme], theme)
                 renderer_mod.png_size(data)
             except Exception as exc:  # a renderer fault after the anchors passed: exit 2
                 message = MSG_RASTER_FAILED.format(
@@ -848,16 +874,16 @@ def _planned(existing: Path | None, name: str, data: bytes) -> tuple[str, bytes,
     return name, data, existing is not None and _read_generated_bytes(existing / name) == data
 
 
-def _planned_text(existing: Path | None, name: str, data: bytes) -> tuple[str, bytes, bool]:
+def _planned_text(existing: Path | None, name: str, text: str) -> tuple[str, bytes, bool]:
     """A house SVG: compared as LF text, like ``README.md`` (a CRLF checkout stays current)."""
-    current = existing is not None and _read_generated(existing / name) == data.decode("utf-8")
-    return name, data, current
+    current = existing is not None and _read_generated(existing / name) == text
+    return name, text.encode("utf-8"), current
 
 
 def _plan_rasters(
     target: Path,
     rendered: Mapping[str, Mapping[str, bytes]] | None,
-    svgs: Mapping[str, Mapping[str, bytes]],
+    svgs: Mapping[str, Mapping[str, str]],
 ) -> _RasterPlan:
     """The PNGs (``--png`` only) and house SVGs (every sidecar diagram) to write, and the orphans.
 
@@ -905,8 +931,9 @@ def render_dir(
     """Check, then regenerate (or with ``check_only`` compare) ``README.md`` + ``workflows.json``.
 
     Every sidecar diagram's house SVGs are drawn in memory (section 2.5). With ``rasterizer``
-    (``render --png``) the check renders every file (anchors first), the raster anchors run and
-    every raster is rendered in memory. The write order is then: changed rasters and house SVGs,
+    (``render --png``) the check renders every file (anchors first), then the mermaid raster
+    anchors run when a diagram has no sidecar and the house anchors when one has, and every
+    raster is rendered in memory. The write order is then: changed rasters and house SVGs,
     ``README.md`` + ``workflows.json``, and orphan deletion last.
 
     Raises :class:`GateError` (exit 2) when the gate cannot run or an output cannot be written.
@@ -919,16 +946,19 @@ def render_dir(
         return RenderResult(report, (), EXIT_FINDINGS)
 
     diagrams = _load_diagrams(target)
-    rendered: dict[str, dict[str, bytes]] | None = None
-    if rasterizer is not None:
-        if not renderer_mod.raster_anchor_ok(rasterizer):
-            raise GateError(MSG_ANCHOR_BROKEN)
-        rendered = _render_rasters(diagrams, rasterizer)
     svgs = {
-        d.id: {theme: draw_svg(d.layout, theme).encode("utf-8") for theme in RASTER_THEMES}
+        d.id: {theme: draw_svg(d.layout, theme) for theme in RASTER_THEMES}
         for d in diagrams
         if d.layout is not None
     }
+    rendered: dict[str, dict[str, bytes]] | None = None
+    if rasterizer is not None:
+        mermaid = any(d.layout is None for d in diagrams)
+        if mermaid and not renderer_mod.raster_anchor_ok(rasterizer):
+            raise GateError(MSG_ANCHOR_BROKEN)
+        if svgs and not renderer_mod.house_anchor_ok():
+            raise GateError(MSG_HOUSE_ANCHOR_BROKEN)
+        rendered = _render_rasters(diagrams, rasterizer, svgs)
     intro = _read_intro(target)
     source_dir = source_dir_of(target)
     readme_path = target / README_NAME

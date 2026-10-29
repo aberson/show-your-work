@@ -14,6 +14,8 @@ this object rather than holding an equal copy.
 from __future__ import annotations
 
 import re
+import struct
+import zlib
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Final
@@ -129,6 +131,10 @@ TEMPLATE_MARKER_MD: Final = "<!-- show-your-work:template -->"
 
 #: The starter diagram ``init`` copies beside ``intro.md`` (``INTRO_NAME``).
 EXAMPLE_NAME: Final = "example-workflow.mmd"
+
+#: The importable package whose data (``init`` templates, bundled fonts) ``importlib.resources``
+#: reads.
+PACKAGE: Final = "show_your_work"
 
 #: Package-relative directory of the shipped templates (the wheel force-includes the repo's
 #: ``templates/workflows/`` here; see ``pyproject.toml``).
@@ -355,6 +361,49 @@ PNG_IHDR_TAG: Final = b"IHDR"
 PNG_IHDR_TAG_OFFSET: Final = 12
 PNG_WIDTH_OFFSET: Final = 16
 PNG_HEADER_BYTES: Final = 24
+#: The IHDR fields after width / height, in order: bit depth, colour type, compression, filter
+#: and interlace method (one byte each, from ``PNG_HEADER_BYTES``).
+PNG_IHDR_FIELDS: Final = 5
+#: The big-endian length word opening every chunk.
+PNG_CHUNK_LENGTH_BYTES: Final = 4
+#: Every chunk tag is four ASCII bytes, like ``PNG_IHDR_TAG``.
+PNG_CHUNK_TAG_BYTES: Final = len(PNG_IHDR_TAG)
+#: The CRC closing every chunk.
+PNG_CRC_BYTES: Final = 4
+#: Byte offsets inside one chunk: the tag follows the big-endian length, the data follows the tag.
+PNG_CHUNK_TAG_OFFSET: Final = PNG_CHUNK_LENGTH_BYTES
+#: See ``PNG_CHUNK_TAG_OFFSET``.
+PNG_CHUNK_DATA_OFFSET: Final = PNG_CHUNK_TAG_OFFSET + PNG_CHUNK_TAG_BYTES
+#: Bytes a chunk adds around its data: the length, the tag and the CRC.
+PNG_CHUNK_OVERHEAD: Final = PNG_CHUNK_DATA_OFFSET + PNG_CRC_BYTES
+#: The IHDR chunk's data is always 13 bytes: width, height and the ``PNG_IHDR_FIELDS`` bytes.
+PNG_IHDR_DATA_BYTES: Final = 13
+#: The byte offset just past the IHDR chunk (signature, then the whole first chunk).
+PNG_IHDR_END: Final = len(PNG_SIGNATURE) + PNG_CHUNK_OVERHEAD + PNG_IHDR_DATA_BYTES
+#: The tag of an image-data chunk; a ``tEXt`` chunk before the first one is header metadata.
+PNG_IDAT_TAG: Final = b"IDAT"
+#: The only sample depth the house name-ink check decodes.
+PNG_BIT_DEPTH: Final = 8
+#: Decodable colour type -> channels per pixel: truecolour (RGB) and truecolour with alpha (RGBA).
+PNG_COLOUR_CHANNELS: Final[Mapping[int, int]] = MappingProxyType({2: 3, 6: 4})
+#: The RGB channels of a pixel, compared with a ``#rrggbb`` colour (alpha is ignored).
+PNG_RGB_CHANNELS: Final = 3
+#: Every pixel row starts with one filter-type byte (one of the ``PNG_FILTER_*`` types).
+PNG_FILTER_BYTES: Final = 1
+#: The PNG row filter types, each row's first byte.
+PNG_FILTER_NONE: Final = 0
+#: See ``PNG_FILTER_NONE``.
+PNG_FILTER_SUB: Final = 1
+#: See ``PNG_FILTER_NONE``.
+PNG_FILTER_UP: Final = 2
+#: See ``PNG_FILTER_NONE``.
+PNG_FILTER_AVERAGE: Final = 3
+#: See ``PNG_FILTER_NONE``.
+PNG_FILTER_PAETH: Final = 4
+#: Keeps the low 8 bits of an un-filtered sample (filter arithmetic is modulo 256).
+PNG_BYTE_MASK: Final = 0xFF
+#: The tag of a Latin-1 text chunk (``keyword``, NUL, ``text``).
+PNG_TEXT_TAG: Final = b"tEXt"
 
 #: Raster canvas caps, in pixels AFTER ``RASTER_SCALE``, checked against the SVG-derived size
 #: BEFORE ``png()`` runs. A budget-passing diagram can still carry a ``%%{init}%%`` directive that
@@ -510,6 +559,12 @@ MSG_PNG_RENDERER_MISSING: Final = RENDERER_MISSING_TEMPLATE.format(flag="--png")
 MSG_ANCHOR_BROKEN: Final = (
     "renderer anchor broken: the known-garbage fixture must raise and a known-good diagram "
     "must render; no render result can be trusted"
+)
+#: Exit 2 when the house raster anchors fail: the garbage SVG rasterized, or the known-good
+#: layout did not rasterize to its canvas with name ink.
+MSG_HOUSE_ANCHOR_BROKEN: Final = (
+    "house raster anchor broken: the garbage SVG must raise and the known-good layout must "
+    "rasterize with name ink in its bundled font; no house raster can be trusted"
 )
 #: Exit 2 when the optional renderer is installed but fails to import or initialise.
 RENDERER_BROKEN_TEMPLATE: Final = "mermaidx failed to load ({{reason}}); {flag} cannot run"
@@ -714,9 +769,12 @@ HOUSE_NO_FILL_ATTR: Final = ' fill="none"'
 HOUSE_TEXT_MIDDLE_ATTR: Final = ' text-anchor="middle"'
 #: The letter spacing of lane labels.
 HOUSE_LANE_LABEL_SPACING: Final = ".12em"
+#: The family name the bundled PNG fonts declare (``HOUSE_FONT_SHA256``); a house PNG maps
+#: ``monospace`` to it.
+HOUSE_RASTER_FONT_FAMILY: Final = "DejaVu Sans Mono"
 #: The root ``font-family``: browser monospace fallbacks, then the bundled PNG font.
 HOUSE_FONT_FAMILY: Final = (
-    "ui-monospace,'Cascadia Code','SF Mono',Consolas,'DejaVu Sans Mono',monospace"
+    f"ui-monospace,'Cascadia Code','SF Mono',Consolas,'{HOUSE_RASTER_FONT_FAMILY}',monospace"
 )
 #: The SVG namespace of the root element.
 SVG_NAMESPACE: Final = "http://www.w3.org/2000/svg"
@@ -796,6 +854,88 @@ HOUSE_SVG_FILE: Final = "{id}-{theme}.svg"
 #: orphan candidate (it is deleted only when it also has ``HOUSE_SVG_MARKER`` as its first child).
 HOUSE_SVG_SUFFIXES: Final[tuple[str, ...]] = tuple(
     f"-{theme}{HOUSE_SVG_SUFFIX}" for theme in RASTER_THEMES
+)
+
+# ---------------------------------------------------------------------------
+# House PNG rasters for ``render --png`` (Phase 2 section 2.6 Step 10; decisions in section
+# 12.D). An unpinned value here silently changes every house raster hash.
+# ---------------------------------------------------------------------------
+
+#: Importable name of the SVG rasterizer of house PNGs (extra ``render``; the pin lives in
+#: pyproject).
+HOUSE_RASTERIZER_MODULE: Final = "resvg_py"
+#: Package-relative directory of the bundled fonts and their licence (``PACKAGE`` data).
+HOUSE_FONT_PACKAGE_PARTS: Final[tuple[str, ...]] = tuple(["fonts"])
+#: Bundled font file -> its pinned SHA-256: regular, then bold (``HOUSE_BOLD`` text). These fonts
+#: and no others draw a house PNG (system fonts are skipped).
+HOUSE_FONT_SHA256: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        "DejaVuSansMono.ttf": "602ec86b8948cfcd956482fe64f94c36c867770149ef2f791d4613f443bcecb3",
+        "DejaVuSansMono-Bold.ttf": (
+            "baada9a5172fe20886251aff0433fc38461912d5daf07287e7bee56620a8da96"
+        ),
+    }
+)
+#: The DejaVu licence shipped beside the fonts (``HOUSE_FONT_PACKAGE_PARTS``).
+HOUSE_FONT_LICENSE: Final = "LICENSE-DejaVu.txt"
+#: The pinned SHA-256 of ``HOUSE_FONT_LICENSE``.
+HOUSE_FONT_LICENSE_SHA256: Final = (
+    "d75938dec098f06f0ac3c00853065d94f020be1c3c62ef1dc2975ba15b4d9b0e"
+)
+#: Raster theme -> the OPAQUE background of a house PNG: the theme's card fill (Phase 2 section
+#: 2.5).
+HOUSE_RASTER_BACKGROUNDS: Final[Mapping[str, str]] = MappingProxyType(
+    {theme: palette[PALETTE_CARD_FILL] for theme, palette in HOUSE_PALETTES.items()}
+)
+#: House garbage anchor: rasterizing this malformed SVG MUST raise.
+HOUSE_GARBAGE_SVG: Final = "<svg xmlns='http://www.w3.org/2000/svg'><g></svg>"
+#: House known-good anchor: the two-lane layout of the Step 10 fixture
+#: ``tests/fixtures/layout/png/house.layout.json`` (lane 0 ``out`` and lane 1 ``in`` are both node
+#: 0). Its house SVG MUST rasterize to ``RASTER_SCALE`` x its viewBox with name ink in
+#: ``HOUSE_INK_BOX`` for every theme, so a rasterizer that draws no text cannot pass.
+HOUSE_KNOWN_GOOD: Final = (
+    '{"schema":"show-your-work.layout.v1",'
+    '"source_sha256":"64d5f3fe5d2d984cde17e1fce590e41f44f5d615eca112771f4b800a66bdd06f",'
+    '"alt":"Two columns joined by a straight spine: draft and review, then build and ship.",'
+    '"lanes":[{"label":"PLAN","in":0,"out":0,"nodes":['
+    '{"name":"Draft plan","sub":"one page","side":false,"branch_label":""},'
+    '{"name":"Review plan","sub":"two readers","side":false,"branch_label":""}]},'
+    '{"label":"BUILD","in":0,"out":1,"nodes":['
+    '{"name":"Build step","sub":"tests first","side":false,"branch_label":""},'
+    '{"name":"Ship release","sub":"","side":false,"branch_label":""}]}],'
+    '"loops":[],"rejoin":null}'
+)
+#: The name ink box reaches this far below the name baseline (DejaVu descenders).
+HOUSE_INK_DESCENT: Final = 5
+#: The name ink box of lane 0, node 0, at scale 1 as ``(left, top, right, bottom)`` (right and
+#: bottom exclusive): from the name's x to the pill's right edge, and from one name size above
+#: the name baseline to ``HOUSE_INK_DESCENT`` below it. Node 0 is never a side node.
+HOUSE_INK_BOX: Final[tuple[int, ...]] = tuple(
+    [
+        HOUSE_MARGIN + HOUSE_TEXT_DX,
+        HOUSE_TOP + HOUSE_NAME_DY - HOUSE_NAME_SIZE,
+        HOUSE_MARGIN + HOUSE_PILL_WIDTH,
+        HOUSE_TOP + HOUSE_NAME_DY + HOUSE_INK_DESCENT,
+    ]
+)
+#: At least this many ``HOUSE_INK_BOX`` pixels must be the name colour (a raster drawn with
+#: no usable font has no text at all).
+HOUSE_INK_MIN_PIXELS: Final = 20
+#: A pixel is the name colour when every channel is within this much of it.
+HOUSE_INK_TOLERANCE: Final = 8
+#: The ``tEXt`` keyword and text that tag a house PNG.
+HOUSE_PNG_KEYWORD: Final = GENERATOR_NAME
+#: See ``HOUSE_PNG_KEYWORD``.
+HOUSE_PNG_TEXT: Final = "house-v1"
+#: The data of the tagging ``tEXt`` chunk: keyword, NUL separator, text.
+HOUSE_PNG_TEXT_DATA: Final = f"{HOUSE_PNG_KEYWORD}\0{HOUSE_PNG_TEXT}".encode("latin-1")
+#: The complete tagging chunk (length, ``tEXt``, data, CRC), inserted directly after IHDR. A PNG
+#: is a house PNG only when this exact chunk appears before its first ``IDAT``.
+HOUSE_PNG_CHUNK: Final = (
+    struct.pack(">I", len(HOUSE_PNG_TEXT_DATA))
+    + PNG_TEXT_TAG
+    + HOUSE_PNG_TEXT_DATA
+    + struct.pack(">I", zlib.crc32(PNG_TEXT_TAG + HOUSE_PNG_TEXT_DATA))
 )
 
 # ---------------------------------------------------------------------------

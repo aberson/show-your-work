@@ -427,6 +427,7 @@ dev = [
 ]
 render = [
     { name = "mermaidx" },
+    { name = "resvg-py" },
 ]
 
 [package.metadata]
@@ -434,6 +435,7 @@ requires-dist = [
     { name = "mermaidx", marker = "extra == 'render'", specifier = "==0.9.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "resvg-py", marker = "extra == 'render'", specifier = "==0.5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
 provides-extras = ["dev", "render"]

@@ -33,7 +33,7 @@ from show_your_work.constants import (
     REPORT_SCHEMA,
 )
 from show_your_work.render import build_index, build_readme, github_anchor, index_up_to_date
-from tests.fakes import FakeRenderer, junction, layout_project, snapshot
+from tests.fakes import FakeRenderer, house_rasterizer, junction, layout_project, snapshot
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GOOD = FIXTURES / "good"
@@ -1051,6 +1051,7 @@ def test_png_with_a_sidecar_writes_both_rasters_and_house_svgs(
 ) -> None:
     target = _sidecar_project(tmp_path)
     monkeypatch.setattr(renderer, "load", FakeRenderer)
+    monkeypatch.setattr(renderer, "_rasterize_svg", house_rasterizer)
     assert main(["render", str(target), "--png"]) == EXIT_OK
     names = sorted(p.name for p in (target / "rasters").iterdir())
     ids = ("feedback", "flow", "plain")

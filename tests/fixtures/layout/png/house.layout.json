@@ -1,0 +1,47 @@
+{
+  "schema": "show-your-work.layout.v1",
+  "source_sha256": "64d5f3fe5d2d984cde17e1fce590e41f44f5d615eca112771f4b800a66bdd06f",
+  "alt": "Two columns joined by a straight spine: draft and review, then build and ship.",
+  "lanes": [
+    {
+      "label": "PLAN",
+      "in": 0,
+      "out": 0,
+      "nodes": [
+        {
+          "name": "Draft plan",
+          "sub": "one page",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Review plan",
+          "sub": "two readers",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    },
+    {
+      "label": "BUILD",
+      "in": 0,
+      "out": 1,
+      "nodes": [
+        {
+          "name": "Build step",
+          "sub": "tests first",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Ship release",
+          "sub": "",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    }
+  ],
+  "loops": [],
+  "rejoin": null
+}

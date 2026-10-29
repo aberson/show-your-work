@@ -3,11 +3,13 @@
 Behavioural tests drive the production caller ``cli.main`` against tmp directories. The template
 tests read the repo's ``templates/workflows/`` directly, and one test builds the real wheel and runs
 ``init`` from the unpacked package (no source checkout on ``sys.path``), proving the templates
-ship as package data rather than only working from a checkout.
+and the bundled house-raster fonts and their licence (plan Phase 2 Step 10) ship as package data
+rather than only working from a checkout.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import stat
@@ -47,6 +49,8 @@ from show_your_work.scaffold import is_template_origin, load_templates
 REPO = Path(__file__).resolve().parents[1]
 TEMPLATES = REPO / "templates" / "workflows"
 DOGFOOD = REPO / "docs" / "workflows"
+#: The bundled house-raster font file names (plan Phase 2 section 2.6, Step 10), regular then bold.
+FONT_FILES_ANCHOR = ("DejaVuSansMono.ttf", "DejaVuSansMono-Bold.ttf")  # anchor: plan section 2.6
 
 USER_DIAGRAM = (
     "%% My Own Flow\n"
@@ -368,6 +372,10 @@ import show_your_work.scaffold as s
 from pathlib import Path
 assert Path(s.__file__).resolve().is_relative_to(Path(sys.argv[1]).resolve()), s.__file__
 assert s._checkout_template_dir() is None, "the source-checkout fallback must not be reachable"
+import show_your_work.renderer as r
+for font in r.house_fonts():
+    assert Path(str(font)).resolve().is_relative_to(Path(sys.argv[1]).resolve()), font
+    assert font.is_file(), font
 from show_your_work.cli import main
 code = main(["init", sys.argv[2]])
 if code == 0:
@@ -433,8 +441,17 @@ def test_init_works_from_the_built_wheel(tmp_path: Path) -> None:
     unpacked = tmp_path / "site"
     with zipfile.ZipFile(wheel) as archive:
         for name in constants.TEMPLATE_FILES:
-            member = f"show_your_work/templates/workflows/{name}"
+            member = "/".join([constants.PACKAGE, *constants.TEMPLATE_PACKAGE_PARTS, name])
             assert archive.read(member) == _template(name)
+        assert tuple(constants.HOUSE_FONT_SHA256) == FONT_FILES_ANCHOR
+        pinned = {
+            **constants.HOUSE_FONT_SHA256,
+            constants.HOUSE_FONT_LICENSE: constants.HOUSE_FONT_LICENSE_SHA256,
+        }
+        for name, digest in pinned.items():
+            member = "/".join([constants.PACKAGE, *constants.HOUSE_FONT_PACKAGE_PARTS, name])
+            data = archive.read(member)
+            assert hashlib.sha256(data).hexdigest() == digest
         archive.extractall(unpacked)
 
     target = tmp_path / "consumer" / "docs" / "workflows"

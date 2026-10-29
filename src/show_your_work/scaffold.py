@@ -37,6 +37,7 @@ from show_your_work.constants import (
     MSG_CANNOT_WRITE,
     MSG_TARGET_NOT_DIR,
     MSG_TEMPLATES_MISSING,
+    PACKAGE,
     SOURCE_CHECKOUT_MARKER,
     STATE_CURRENT,
     TEMPLATE_FILES,
@@ -46,8 +47,6 @@ from show_your_work.header import normalize_newlines
 from show_your_work.render import write_atomic
 
 __all__ = ["ScaffoldAction", "is_template_origin", "load_templates", "scaffold"]
-
-PACKAGE = "show_your_work"
 
 
 @dataclass(frozen=True, slots=True)

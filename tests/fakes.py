@@ -1,5 +1,8 @@
-"""Shared test support: a stand-in renderer (mermaidx is an optional extra the default gate never
-installs) and the ``check --json`` document readers."""
+"""Shared test support: stand-in renderers and the ``check --json`` document readers.
+
+The stand-ins replace mermaidx and the house rasterizer, because mermaidx and resvg-py are an
+optional extra the default gate never installs.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +17,14 @@ from typing import Any
 
 import pytest
 
-from show_your_work.constants import COMMENT_PREFIX, GARBAGE
+from show_your_work.constants import (
+    COMMENT_PREFIX,
+    GARBAGE,
+    HOUSE_GARBAGE_SVG,
+    HOUSE_PALETTES,
+    PALETTE_SPINE,
+)
+from show_your_work.renderer import raster_canvas
 
 #: Counts returned for a diagram whose title is not in the fake's table.
 DEFAULT_COUNTS = (2, 1)
@@ -57,7 +67,8 @@ def without_front_matter(source: str) -> str:
     return rest if sep else source
 
 
-def _chunk(tag: bytes, data: bytes) -> bytes:
+def png_chunk(tag: bytes, data: bytes) -> bytes:
+    """One PNG chunk: big-endian length, ``tag``, ``data`` and its CRC."""
     return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
 
 
@@ -68,9 +79,9 @@ def solid_png(width: int, height: int, background: str) -> bytes:
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     return (
         b"\x89PNG\r\n\x1a\n"
-        + _chunk(b"IHDR", ihdr)
-        + _chunk(b"IDAT", zlib.compress(rows))
-        + _chunk(b"IEND", b"")
+        + png_chunk(b"IHDR", ihdr)
+        + png_chunk(b"IDAT", zlib.compress(rows))
+        + png_chunk(b"IEND", b"")
     )
 
 
@@ -130,6 +141,18 @@ class FakeRenderer:
             raise RuntimeError(f"raster failed for {title}")
         width, height = FAKE_PNG_SIZE
         return solid_png(int(width * scale), int(height * scale), background)
+
+
+def house_rasterizer(svg: str, theme: str) -> bytes:
+    """Stand-in for ``renderer._rasterize_svg`` (resvg-py is an optional extra).
+
+    It raises on ``HOUSE_GARBAGE_SVG`` and otherwise returns a solid PNG of the SVG's canvas in
+    the theme's name colour, so the real house anchors pass and the real tagging runs.
+    """
+    if svg == HOUSE_GARBAGE_SVG:
+        raise ValueError("expected 'g' tag, not 'svg'")
+    width, height = raster_canvas(svg)
+    return solid_png(width, height, HOUSE_PALETTES[theme][PALETTE_SPINE])
 
 
 def junction(link: Path, target: Path) -> None:
