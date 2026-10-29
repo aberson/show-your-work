@@ -21,3 +21,6 @@ dist/
 
 # Session-local task state (never committed)
 .claude/task-state/
+
+# Local skill workflow diagrams (private workspace content; never committed to this public repo)
+docs/skill-diagrams/
