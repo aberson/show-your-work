@@ -17,23 +17,32 @@ from typing import Any
 
 import pytest
 
-from show_your_work import __version__, render
+from show_your_work import __version__, render, renderer
 from show_your_work.cli import main
 from show_your_work.constants import (
     EXIT_FINDINGS,
     EXIT_GATE,
     EXIT_OK,
     GENERATED_MARKER,
+    HOUSE_SVG_MARKER,
     INDEX_ITEM_KEYS,
     INDEX_KEYS,
     INDEX_SCHEMA,
     MSG_NO_DEFAULT_TARGET,
+    RASTER_THEMES,
     REPORT_SCHEMA,
 )
 from show_your_work.render import build_index, build_readme, github_anchor, index_up_to_date
+from tests.fakes import FakeRenderer, junction, layout_project, snapshot
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GOOD = FIXTURES / "good"
+LAYOUT = FIXTURES / "layout"
+LAYOUT_VALID = LAYOUT / "valid"
+PHASE1 = LAYOUT / "phase1"
+GOLDEN = LAYOUT / "golden"
+#: The ``generated_at`` the ``phase1/render-*`` goldens were recorded with (Phase 1 code).
+PHASE1_NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
 EXPECTED_TOP_KEYS = ["schema", "generator", "generated_at", "source_dir", "items"]
 EXPECTED_ITEM_KEYS = [
@@ -77,25 +86,9 @@ def _copy_good(dest: Path) -> Path:
     return dest
 
 
-def _project(tmp_path: Path, name: str = "proj") -> Path:
-    """A tmp project tree with a ``.git`` marker at its root and the good set in docs/workflows."""
-    root = tmp_path / name
-    (root / ".git").mkdir(parents=True)
-    _copy_good(root / "docs" / "workflows")
-    return root
-
-
 def _index(target: Path) -> dict[str, Any]:
     document: dict[str, Any] = json.loads((target / "workflows.json").read_text(encoding="utf-8"))
     return document
-
-
-def _snapshot(target: Path) -> dict[str, bytes]:
-    return {
-        p.relative_to(target).as_posix(): p.read_bytes()
-        for p in sorted(target.rglob("*"))
-        if p.is_file()
-    }
 
 
 def _has_git_ancestor(path: Path) -> bool:
@@ -167,13 +160,13 @@ def test_render_check_exits_0_after_render_and_1_after_editing_a_source(
 
     src = target / "minimal.mmd"
     src.write_bytes(src.read_bytes() + b"    C --> D[Ship]\n")
-    before = _snapshot(target)
+    before = snapshot(target)
     assert main(["render", str(target), "--check"]) == EXIT_FINDINGS
     captured = capsys.readouterr()
     assert "README.md: stale" in captured.out
     assert "workflows.json: stale" in captured.out
     assert f"README.md is out of date; run 'show-your-work render {target}'" in captured.err
-    assert _snapshot(target) == before  # --check writes nothing
+    assert snapshot(target) == before  # --check writes nothing
 
 
 def test_render_check_detects_intro_edit(tmp_path: Path) -> None:
@@ -386,8 +379,8 @@ def test_build_readme_handles_backticks_in_sources_and_body() -> None:
 def test_source_path_is_cwd_independent_and_project_relative(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root = _project(tmp_path)
-    target = root / "docs" / "workflows"
+    root = tmp_path / "proj"
+    target = layout_project(root, GOOD)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
 
@@ -438,10 +431,8 @@ def test_source_dir_is_dot_without_a_git_ancestor(tmp_path: Path) -> None:
 
 
 def test_crlf_and_lf_copies_produce_the_same_hash_and_readme(tmp_path: Path) -> None:
-    lf_root = _project(tmp_path, "lf")
-    crlf_root = _project(tmp_path, "crlf")
-    lf_dir = lf_root / "docs" / "workflows"
-    crlf_dir = crlf_root / "docs" / "workflows"
+    lf_dir = layout_project(tmp_path / "lf", GOOD)
+    crlf_dir = layout_project(tmp_path / "crlf", GOOD)
     for name in ("minimal.mmd", "intro.md"):
         raw = (lf_dir / name).read_bytes()
         assert b"\r" not in raw
@@ -463,10 +454,10 @@ def test_crlf_checkout_of_generated_files_is_up_to_date(tmp_path: Path) -> None:
     for name in ("README.md", "workflows.json"):
         path = target / name
         path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
-    before = _snapshot(target)
+    before = snapshot(target)
     assert main(["render", str(target), "--check"]) == EXIT_OK
     assert main(["render", str(target)]) == EXIT_OK
-    assert _snapshot(target) == before
+    assert snapshot(target) == before
 
 
 # --- rasters preserved-or-null (section 3.4) -----------------------------------------------
@@ -580,15 +571,15 @@ def test_render_refuses_a_failing_set_and_writes_nothing(
     target = _copy_good(tmp_path / "good")
     _write(target / "broken.mmd", "%% Broken\n%% Summary: no other fields\n\nflowchart LR\n")
     _write(target / "README.md", "hand-written placeholder\n")
-    before = _snapshot(target)
+    before = snapshot(target)
     assert main(["render", str(target)]) == EXIT_FINDINGS
     captured = capsys.readouterr()
     assert "broken.mmd" in captured.out and "FAIL" in captured.out
     assert "refusing to render: 1 of 2 file(s) fail check" in captured.err
-    assert _snapshot(target) == before
+    assert snapshot(target) == before
     assert not (target / "workflows.json").exists()
     assert main(["render", str(target), "--check"]) == EXIT_FINDINGS
-    assert _snapshot(target) == before
+    assert snapshot(target) == before
 
 
 def test_render_json_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -687,4 +678,384 @@ def test_check_flags_a_reformatted_or_restamped_index(tmp_path: Path) -> None:
     (target / "workflows.json").write_bytes(compact.encode())
     assert main(["render", str(target), "--check"]) == EXIT_FINDINGS
     assert main(["render", str(target)]) == EXIT_OK
+    assert main(["render", str(target), "--check"]) == EXIT_OK
+
+
+# --- house SVGs and the README embed (Phase 2 section 2.5) ---------------------------------
+
+
+def _link_dir(kind: str, link: Path, target: Path) -> None:
+    if kind == "junction":
+        junction(link, target)
+        return
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create symlinks here: {exc}")
+
+
+def _sidecar_project(tmp_path: Path, *, keep: tuple[str, ...] = ("feedback", "flow")) -> Path:
+    """``layout/valid`` in a tmp project, keeping only the sidecars of the ``keep`` ids."""
+    target = layout_project(tmp_path / "proj", LAYOUT_VALID)
+    for path in target.glob("*.layout.json"):
+        if path.name.removesuffix(".layout.json") not in keep:
+            path.unlink()
+    return target
+
+
+def _marked_svg() -> bytes:
+    return (GOLDEN / "flow-light.svg").read_bytes()
+
+
+def _status_lines(text: str) -> dict[str, str]:
+    """The ``<file>: <state>`` lines of a render run, keyed by file."""
+    pairs = (line.rpartition(": ") for line in text.splitlines() if ": " in line)
+    return {name: state for name, _, state in pairs if state in ("written", "up to date", "stale")}
+
+
+@pytest.mark.parametrize("fixture", ["valid", "realistic"])
+def test_sidecar_less_folder_renders_byte_identically_to_phase1(
+    fixture: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if fixture == "valid":
+        target = _sidecar_project(tmp_path, keep=())
+    else:
+        target = layout_project(tmp_path / "proj", FIXTURES / "realistic")
+    monkeypatch.setattr(render, "_utc_now", lambda: PHASE1_NOW)
+    assert main(["render", str(target)]) == EXIT_OK
+    readme = PHASE1 / f"render-{fixture}-README.md"
+    index = PHASE1 / f"render-{fixture}-workflows.json"
+    assert (target / "README.md").read_bytes() == readme.read_bytes()
+    assert (target / "workflows.json").read_bytes() == index.read_bytes()
+    assert not (target / "rasters").exists()
+
+
+@pytest.mark.parametrize("kind", ["junction", "symlink"])
+def test_sidecar_less_folder_renders_as_in_phase1_through_a_linked_rasters(
+    kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "flow-light.svg").write_bytes(_marked_svg())  # a marked orphan behind the link
+    (elsewhere / "stray.png").write_bytes(b"stray")
+    target = _sidecar_project(tmp_path, keep=())
+    _link_dir(kind, target / "rasters", elsewhere)
+    before = snapshot(elsewhere)
+    monkeypatch.setattr(render, "_utc_now", lambda: PHASE1_NOW)
+    assert main(["render", str(target)]) == EXIT_OK
+    assert main(["render", str(target), "--check"]) == EXIT_OK
+    assert (target / "README.md").read_bytes() == (PHASE1 / "render-valid-README.md").read_bytes()
+    assert snapshot(elsewhere) == before  # cleanup is skipped silently through a link
+
+
+@pytest.mark.parametrize("kind", ["junction", "symlink", "file"])
+def test_sidecar_folder_refuses_a_rasters_that_is_not_a_plain_directory(
+    kind: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keep.txt").write_bytes(b"keep")
+    target = _sidecar_project(tmp_path)
+    if kind == "file":
+        (target / "rasters").write_bytes(b"not a dir")
+    else:
+        _link_dir(kind, target / "rasters", elsewhere)
+    before = snapshot(target)
+    assert main(["render", str(target)]) == EXIT_GATE
+    assert main(["render", str(target), "--check"]) == EXIT_GATE
+    assert "not a plain directory" in capsys.readouterr().err
+    assert snapshot(elsewhere) == {"keep.txt": b"keep"}
+    assert snapshot(target) == before
+    assert not (target / "README.md").exists()
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_a_node_name_edit_keeps_check_passing_and_makes_exactly_the_two_svgs_stale(
+    as_json: bool, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _sidecar_project(tmp_path)
+    assert main(["render", str(target)]) == EXIT_OK
+    sidecar = target / "flow.layout.json"
+    sidecar.write_bytes(sidecar.read_bytes().replace(b'"Pack box"', b'"Pack bix"', 1))
+    assert main(["check", str(target)]) == EXIT_OK
+    capsys.readouterr()
+    before = snapshot(target)
+
+    assert (
+        main(["render", str(target), "--check", *(["--json"] if as_json else [])]) == EXIT_FINDINGS
+    )
+    captured = capsys.readouterr()
+    if as_json:
+        assert json.loads(captured.out)["exit_code"] == EXIT_FINDINGS
+    lines = captured.err if as_json else captured.out
+    stale = {name for name, state in _status_lines(lines).items() if state == "stale"}
+    assert stale == {"rasters/flow-light.svg", "rasters/flow-dark.svg"}
+    assert _status_lines(lines)["README.md"] == "up to date"
+    assert _status_lines(lines)["workflows.json"] == "up to date"
+    command = f"show-your-work render {target}"
+    for name in sorted(stale):
+        assert f"{name} is out of date; run '{command}'" in captured.err
+    assert snapshot(target) == before  # --check writes nothing
+
+
+def test_crlf_checked_out_svgs_stay_current_and_untouched_until_their_content_changes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # core.autocrlf=true checks the committed LF SVGs out as CRLF; they compare as LF text like
+    # README.md / workflows.json, so they are neither stale nor rewritten.
+    target = _sidecar_project(tmp_path)
+    assert main(["render", str(target)]) == EXIT_OK
+    svgs = sorted((target / "rasters").glob("*.svg"))
+    assert svgs
+    for path in svgs:
+        raw = path.read_bytes()
+        assert b"\r" not in raw
+        path.write_bytes(raw.replace(b"\n", b"\r\n"))
+    crlf = snapshot(target)
+    capsys.readouterr()
+
+    assert main(["render", str(target), "--check"]) == EXIT_OK
+    states = _status_lines(capsys.readouterr().out)
+    current = {name for name, state in states.items() if state == "up to date"}
+    assert {f"rasters/{p.name}" for p in svgs} <= current
+    assert "stale" not in states.values()
+
+    assert main(["render", str(target)]) == EXIT_OK
+    assert "written" not in _status_lines(capsys.readouterr().out).values()
+    assert snapshot(target) == crlf  # idempotent: the CRLF bytes are left as they are
+
+    sidecar = target / "flow.layout.json"
+    sidecar.write_bytes(sidecar.read_bytes().replace(b'"Pack box"', b'"Pack bix"', 1))
+    assert main(["render", str(target), "--check"]) == EXIT_FINDINGS
+    stale = {n for n, s in _status_lines(capsys.readouterr().out).items() if s == "stale"}
+    assert stale == {"rasters/flow-light.svg", "rasters/flow-dark.svg"}
+
+
+def test_a_missing_svg_and_a_marked_orphan_svg_are_stale(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _sidecar_project(tmp_path)
+    assert main(["render", str(target)]) == EXIT_OK
+    (target / "rasters" / "flow-dark.svg").unlink()
+    (target / "rasters" / "old-light.svg").write_bytes(_marked_svg())
+    capsys.readouterr()
+    assert main(["render", str(target), "--check"]) == EXIT_FINDINGS
+    stale = {n for n, s in _status_lines(capsys.readouterr().out).items() if s == "stale"}
+    assert stale == {"rasters/flow-dark.svg", "rasters/old-light.svg"}
+
+    assert main(["render", str(target)]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "rasters/flow-dark.svg: written" in out
+    assert "rasters/old-light.svg: deleted" in out
+    assert not (target / "rasters" / "old-light.svg").exists()
+    assert main(["render", str(target), "--check"]) == EXIT_OK
+
+
+def test_readme_embeds_the_house_svgs_with_the_exact_template(tmp_path: Path) -> None:
+    target = _sidecar_project(tmp_path)
+    assert main(["render", str(target)]) == EXIT_OK
+    readme = (target / "README.md").read_text(encoding="utf-8")
+    flow = json.loads((target / "flow.layout.json").read_bytes())
+    body = (LAYOUT_VALID / "flow.mmd").read_text(encoding="utf-8").rstrip() + "\n"
+    # Literal section 2.5 text: a drifted constant fails here.
+    embed = (
+        "**Alt (mermaid source):** Two columns, plan then build, joined by a spine; a dashed "
+        "return closes the loop.\n\n"
+        "**Deliberately not shown:** refunds, partial shipments\n\n"
+        "<picture>\n"
+        '  <source media="(prefers-color-scheme: dark)" srcset="rasters/flow-dark.svg">\n'
+        f'  <img alt="{flow["alt"]}" src="rasters/flow-light.svg">\n'
+        "</picture>\n\n"
+        "<details><summary>Mermaid source</summary>\n\n"
+        f"```mermaid\n{body}```\n\n"
+        "</details>\n\n---\n"
+    )
+    assert embed in readme
+    assert readme.startswith(
+        "<!-- GENERATED FILE - DO NOT EDIT.\n"
+        "     Produced by `show-your-work render` from intro.md, the .mmd files and their "
+        ".layout.json sidecars in this directory.\n"
+    )
+    assert (
+        "The house-style SVGs in `rasters/` are generated from the `*.layout.json` sidecars by "
+        "the same command.\n"
+    ) in readme
+    # The sidecar-less diagram in the same folder keeps its Phase 1 section.
+    plain = (LAYOUT_VALID / "plain.mmd").read_text(encoding="utf-8").rstrip() + "\n"
+    assert "**Alt:** Two boxes side by side joined by a single arrow.\n" in readme
+    assert f"everything else\n\n```mermaid\n{plain}```\n" in readme
+    assert readme.count("<picture>") == len(list(target.glob("*.layout.json")))
+
+
+def test_an_unmarked_file_at_a_generated_svg_path_exits_2_and_stays_untouched(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _sidecar_project(tmp_path)
+    (target / "rasters").mkdir()
+    mine = target / "rasters" / "flow-light.svg"
+    mine.write_bytes(b"<svg xmlns='http://www.w3.org/2000/svg'><!-- mine --></svg>\n")
+    before = snapshot(target)
+    assert main(["render", str(target)]) == EXIT_GATE
+    assert main(["render", str(target), "--check"]) == EXIT_GATE
+    assert "refusing to overwrite" in capsys.readouterr().err
+    assert snapshot(target) == before
+
+
+def _quoting_svgs() -> dict[str, bytes]:
+    """User SVGs that hold the marker text, but not as the first child the generator writes."""
+    root = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4">'
+    golden = _marked_svg().decode("utf-8")
+    first, _, rest = golden.partition("\n")
+    variants = {
+        "desc": f"{root}\n<desc>quoting {HOUSE_SVG_MARKER}</desc>\n</svg>\n",
+        "later-comment": f"{root}\n<!-- mine -->\n{HOUSE_SVG_MARKER}\n</svg>\n",
+        "title-first": f"{first}\n<title>mine</title>\n{rest}",
+        "marker-before-root": f"{HOUSE_SVG_MARKER}\n{golden}",
+        "same-line": f"{first}{rest}",
+    }
+    return {name: text.encode("utf-8") for name, text in variants.items()}
+
+
+@pytest.mark.parametrize("variant", sorted(_quoting_svgs()))
+def test_a_user_svg_quoting_the_marker_at_a_generated_path_exits_2_and_stays_untouched(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], variant: str
+) -> None:
+    quoting = _quoting_svgs()[variant]
+    assert HOUSE_SVG_MARKER.encode("ascii") in quoting
+    target = _sidecar_project(tmp_path)
+    (target / "rasters").mkdir()
+    (target / "rasters" / "flow-light.svg").write_bytes(quoting)
+    before = snapshot(target)
+    assert main(["render", str(target)]) == EXIT_GATE
+    assert main(["render", str(target), "--check"]) == EXIT_GATE
+    assert "refusing to overwrite" in capsys.readouterr().err
+    assert snapshot(target) == before
+
+
+@pytest.mark.parametrize("variant", sorted(_quoting_svgs()))
+def test_a_user_svg_quoting_the_marker_is_not_deleted_as_an_orphan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], variant: str
+) -> None:
+    quoting = _quoting_svgs()[variant]
+    target = _sidecar_project(tmp_path)
+    assert main(["render", str(target)]) == EXIT_OK
+    mine = target / "rasters" / "old-light.svg"
+    mine.write_bytes(quoting)
+    capsys.readouterr()
+    assert main(["render", str(target), "--check"]) == EXIT_OK
+    assert "old-light.svg" not in capsys.readouterr().out
+    assert main(["render", str(target)]) == EXIT_OK
+    assert "deleted" not in capsys.readouterr().out
+    assert mine.read_bytes() == quoting
+
+
+def test_removing_the_only_sidecar_deletes_its_svgs_from_a_plain_rasters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _sidecar_project(tmp_path, keep=("flow",))
+    monkeypatch.setattr(render, "_utc_now", lambda: PHASE1_NOW)
+    assert main(["render", str(target)]) == EXIT_OK
+    assert sorted(p.name for p in (target / "rasters").iterdir()) == [
+        "flow-dark.svg",
+        "flow-light.svg",
+    ]
+    (target / "flow.layout.json").unlink()
+    capsys.readouterr()
+    assert main(["render", str(target)]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "rasters/flow-light.svg: deleted" in out and "rasters/flow-dark.svg: deleted" in out
+    assert list((target / "rasters").iterdir()) == []
+    # Back to a sidecar-less folder: the Phase 1 README again.
+    assert (target / "README.md").read_bytes() == (PHASE1 / "render-valid-README.md").read_bytes()
+
+
+def test_a_stale_generated_svg_is_removed_last_and_nothing_else_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marked = _marked_svg()
+    target = _sidecar_project(tmp_path)
+    rasters = target / "rasters"
+    (rasters / "sub").mkdir(parents=True)
+    survivors = {
+        "x.png": b"png bytes",
+        "notes.txt": b"keep me",
+        "sub/y-light.svg": marked,
+        "mine-light.svg": b"<svg xmlns='http://www.w3.org/2000/svg'/>\n",
+    }
+    for name, data in survivors.items():
+        (rasters / name).write_bytes(data)
+    (rasters / "old-light.svg").write_bytes(marked)
+
+    events: list[str] = []
+    real_write, real_delete = render.write_atomic, render._delete
+
+    def _record_write(path: Path, text: str | bytes, *, mode: int | None = None) -> None:
+        events.append(f"write {path.name}")
+        real_write(path, text, mode=mode)
+
+    def _record_delete(path: Path) -> None:
+        events.append(f"delete {path.name}")
+        real_delete(path)
+
+    monkeypatch.setattr(render, "write_atomic", _record_write)
+    monkeypatch.setattr(render, "_delete", _record_delete)
+    assert main(["render", str(target)]) == EXIT_OK
+    assert events[-1] == "delete old-light.svg"
+    assert events.index("write README.md") < events.index("delete old-light.svg")
+    assert events.index("write workflows.json") < events.index("delete old-light.svg")
+    assert events.count("delete old-light.svg") == 1 and sum("delete" in e for e in events) == 1
+    assert not (rasters / "old-light.svg").exists()
+    for name, data in survivors.items():
+        assert (rasters / name).read_bytes() == data, name
+
+
+def test_a_symlinked_house_svg_name_in_rasters_survives_cleanup(tmp_path: Path) -> None:
+    marked = _marked_svg()
+    outside = tmp_path / "outside-light.svg"
+    outside.write_bytes(marked)
+    target = _sidecar_project(tmp_path)
+    (target / "rasters").mkdir()
+    link = target / "rasters" / "link-light.svg"
+    try:
+        os.symlink(outside, link)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create symlinks here: {exc}")
+    assert main(["render", str(target)]) == EXIT_OK
+    assert link.is_symlink()
+    assert outside.read_bytes() == marked
+
+
+def test_a_sidecar_failing_check_makes_render_exit_1_writing_nothing(tmp_path: Path) -> None:
+    target = _sidecar_project(tmp_path)
+    shutil.copyfile(LAYOUT / "bound" / "name-23.layout.json", target / "flow.layout.json")
+    before = snapshot(target)
+    assert main(["render", str(target)]) == EXIT_FINDINGS
+    assert snapshot(target) == before
+    assert not (target / "rasters").exists()
+
+
+def test_a_sidecar_changed_after_check_exits_2_writing_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _sidecar_project(tmp_path)
+    before = snapshot(target)
+    bound = (LAYOUT / "bound" / "name-23.layout.json").read_bytes()
+    monkeypatch.setattr(render, "read_layout", lambda path: bound)  # render's re-read only
+    assert main(["render", str(target)]) == EXIT_GATE
+    assert "changed during render" in capsys.readouterr().err
+    assert snapshot(target) == before
+
+
+def test_png_with_a_sidecar_writes_both_rasters_and_house_svgs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = _sidecar_project(tmp_path)
+    monkeypatch.setattr(renderer, "load", FakeRenderer)
+    assert main(["render", str(target), "--png"]) == EXIT_OK
+    names = sorted(p.name for p in (target / "rasters").iterdir())
+    ids = ("feedback", "flow", "plain")
+    expected = [f"{i}-{t}.png" for i in ids for t in RASTER_THEMES]
+    expected += [f"{i}-{t}.svg" for i in ("feedback", "flow") for t in RASTER_THEMES]
+    assert names == sorted(expected)
+    assert main(["render", str(target), "--check", "--png"]) == EXIT_OK
     assert main(["render", str(target), "--check"]) == EXIT_OK

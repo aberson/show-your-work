@@ -12,6 +12,9 @@ rows (section 2.4: ``layout-orphan`` gets its own row, every other code lands on
 * :func:`layout_findings` adds the ``layout-bound`` rules (printable ASCII, lengths, counts, side /
   loop / rejoin structure, a sidecar beside an excalidraw drawing) and the ``layout-stale`` hash pin
   against the sibling ``.mmd`` (:func:`show_your_work.header.sha256_lf`).
+* :func:`draw_svg` draws a valid layout as one theme's house SVG (section 2.5): fixed geometry,
+  fixed element order, concrete palette colours, every sidecar string XML-escaped, every number
+  printed with ``format(v, "g")``, so identical input always yields identical bytes.
 
 Every bound, key name, code and regex comes from :mod:`show_your_work.constants`.
 """
@@ -22,12 +25,60 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from xml.sax.saxutils import escape
 
 from show_your_work.constants import (
     CODE_LAYOUT_BOUND,
     CODE_LAYOUT_INVALID,
     CODE_LAYOUT_STALE,
     EXCALIDRAW_SUFFIX,
+    HOUSE_BOLD_ATTR,
+    HOUSE_BOTTOM_PAD,
+    HOUSE_BRANCH_LABEL_DX,
+    HOUSE_BRANCH_LABEL_DY,
+    HOUSE_CARD_INSET,
+    HOUSE_CARD_RADIUS,
+    HOUSE_CARD_STROKE,
+    HOUSE_DASH_ATTR,
+    HOUSE_FONT_FAMILY,
+    HOUSE_GUTTER,
+    HOUSE_LANE_LABEL_SIZE,
+    HOUSE_LANE_LABEL_SPACING,
+    HOUSE_LANE_LABEL_Y,
+    HOUSE_LINK_ARROW_ID,
+    HOUSE_LINK_DX,
+    HOUSE_LINK_STROKE,
+    HOUSE_LOOP_DX,
+    HOUSE_LOOP_LINK_DX,
+    HOUSE_MARGIN,
+    HOUSE_NAME_DY,
+    HOUSE_NAME_ONLY_DY,
+    HOUSE_NAME_SIZE,
+    HOUSE_NO_FILL_ATTR,
+    HOUSE_PALETTES,
+    HOUSE_PILL_HEIGHT,
+    HOUSE_PILL_RADIUS,
+    HOUSE_PILL_STROKE,
+    HOUSE_PILL_WIDTH,
+    HOUSE_REJOIN_DROP,
+    HOUSE_REJOIN_END_GAP,
+    HOUSE_REJOIN_LABEL_RISE,
+    HOUSE_REJOIN_PAD,
+    HOUSE_REJOIN_STROKE,
+    HOUSE_ROW_PITCH,
+    HOUSE_SHADOW_ID,
+    HOUSE_SIDE_DROP,
+    HOUSE_SMALL_SIZE,
+    HOUSE_SPINE_ARROW_ID,
+    HOUSE_SPINE_STROKE,
+    HOUSE_SUB_DY,
+    HOUSE_SVG_DEFS_TEMPLATE,
+    HOUSE_SVG_END,
+    HOUSE_SVG_MARKER,
+    HOUSE_SVG_ROOT_START,
+    HOUSE_TEXT_DX,
+    HOUSE_TEXT_MIDDLE_ATTR,
+    HOUSE_TOP,
     LANE_IN_KEY,
     LANE_KEYS,
     LANE_LABEL_CHARS_TEXT,
@@ -60,14 +111,26 @@ from show_your_work.constants import (
     MAX_NODE_SUB,
     MAX_PRINTABLE,
     MAX_REJOIN_LABEL,
+    MIN_ALT,
+    MIN_BRANCH_LABEL,
+    MIN_LANE_LABEL,
     MIN_LANE_NODES,
     MIN_LAYOUT_LANES,
+    MIN_NODE_NAME,
+    MIN_NODE_SUB,
     MIN_PRINTABLE,
+    MIN_REJOIN_LABEL,
     NODE_BRANCH_LABEL_KEY,
     NODE_KEYS,
     NODE_NAME_KEY,
     NODE_SIDE_KEY,
     NODE_SUB_KEY,
+    PALETTE_CARD_FILL,
+    PALETTE_CARD_STROKE,
+    PALETTE_LINK,
+    PALETTE_MUTED,
+    PALETTE_SHADOW,
+    PALETTE_SPINE,
     REJOIN_FROM_LANE_KEY,
     REJOIN_FROM_NODE_KEY,
     REJOIN_KEYS,
@@ -88,6 +151,7 @@ __all__ = [
     "Loop",
     "Node",
     "Rejoin",
+    "draw_svg",
     "layout_findings",
     "parse_layout",
 ]
@@ -285,7 +349,10 @@ def _lane(value: object, where: str) -> Lane:
         label=_str(obj[LANE_LABEL_KEY], f"{where}.{LANE_LABEL_KEY}"),
         in_node=_int(obj[LANE_IN_KEY], f"{where}.{LANE_IN_KEY}"),
         out_node=_int(obj[LANE_OUT_KEY], f"{where}.{LANE_OUT_KEY}"),
-        nodes=tuple(_node(n, f"{nodes_where}[{k}]") for k, n in enumerate(nodes)),
+        nodes=tuple(
+            _node(node_value, f"{nodes_where}[{node_index}]")
+            for node_index, node_value in enumerate(nodes)
+        ),
     )
 
 
@@ -331,8 +398,13 @@ def parse_layout(raw: bytes) -> Layout:
         schema=schema,
         source_sha256=digest,
         alt=_str(obj[LAYOUT_ALT_KEY], LAYOUT_ALT_KEY),
-        lanes=tuple(_lane(lane, f"{LAYOUT_LANES_KEY}[{i}]") for i, lane in enumerate(lanes)),
-        loops=tuple(_loop(loop, f"{LAYOUT_LOOPS_KEY}[{j}]") for j, loop in enumerate(loops)),
+        lanes=tuple(
+            _lane(lane, f"{LAYOUT_LANES_KEY}[{index}]") for index, lane in enumerate(lanes)
+        ),
+        loops=tuple(
+            _loop(loop, f"{LAYOUT_LOOPS_KEY}[{loop_index}]")
+            for loop_index, loop in enumerate(loops)
+        ),
         rejoin=_rejoin(obj[LAYOUT_REJOIN_KEY], LAYOUT_REJOIN_KEY),
     )
 
@@ -358,13 +430,15 @@ def _int_text(value: int) -> str:
     return _clip(str(value))
 
 
-def _in_range(index: int, count: int) -> bool:
-    return 0 <= index < count
+def _in_range(position: int, count: int) -> bool:
+    return 0 <= position < count
 
 
 def _lane_problems(lane: Lane, where: str) -> list[str]:
     """Label, node-count, node-text, side-node and ``in`` / ``out`` problems of one lane."""
-    problems = _string_problems(lane.label, f"{where}.{LANE_LABEL_KEY}", 1, MAX_LANE_LABEL)
+    problems = _string_problems(
+        lane.label, f"{where}.{LANE_LABEL_KEY}", MIN_LANE_LABEL, MAX_LANE_LABEL
+    )
     if not problems and LANE_LABEL_RE.fullmatch(lane.label) is None:
         problems.append(f"{where}.{LANE_LABEL_KEY} may hold only {LANE_LABEL_CHARS_TEXT}")
     count = len(lane.nodes)
@@ -373,24 +447,30 @@ def _lane_problems(lane: Lane, where: str) -> list[str]:
             f"{where}.{LANE_NODES_KEY} has {count} nodes "
             f"(allowed {MIN_LANE_NODES}..{MAX_LANE_NODES})"
         )
-    for k, node in enumerate(lane.nodes):
-        node_where = f"{where}.{LANE_NODES_KEY}[{k}]"
-        problems += _string_problems(node.name, f"{node_where}.{NODE_NAME_KEY}", 1, MAX_NODE_NAME)
-        problems += _string_problems(node.sub, f"{node_where}.{NODE_SUB_KEY}", 0, MAX_NODE_SUB)
+    for node_index, node in enumerate(lane.nodes):
+        node_where = f"{where}.{LANE_NODES_KEY}[{node_index}]"
+        problems += _string_problems(
+            node.name, f"{node_where}.{NODE_NAME_KEY}", MIN_NODE_NAME, MAX_NODE_NAME
+        )
+        problems += _string_problems(
+            node.sub, f"{node_where}.{NODE_SUB_KEY}", MIN_NODE_SUB, MAX_NODE_SUB
+        )
         label_where = f"{node_where}.{NODE_BRANCH_LABEL_KEY}"
         if node.side:
-            if k == 0:
+            if node_index == 0:
                 problems.append(f"{node_where} is a side node but node 0 is never side")
-            elif k != count - 1:
+            elif node_index != count - 1:
                 problems.append(f"{node_where} is a side node but not the lane's last node")
-            problems += _string_problems(node.branch_label, label_where, 1, MAX_BRANCH_LABEL)
+            problems += _string_problems(
+                node.branch_label, label_where, MIN_BRANCH_LABEL, MAX_BRANCH_LABEL
+            )
         elif node.branch_label:
             problems.append(f"{label_where} must be empty on a non-side node")
-    for key, index in ((LANE_IN_KEY, lane.in_node), (LANE_OUT_KEY, lane.out_node)):
-        if not _in_range(index, count):
-            problems.append(f"{where}.{key} = {_int_text(index)} is not a node of the lane")
-        elif lane.nodes[index].side:
-            problems.append(f"{where}.{key} = {_int_text(index)} names a side node")
+    for key, node_index in ((LANE_IN_KEY, lane.in_node), (LANE_OUT_KEY, lane.out_node)):
+        if not _in_range(node_index, count):
+            problems.append(f"{where}.{key} = {_int_text(node_index)} is not a node of the lane")
+        elif lane.nodes[node_index].side:
+            problems.append(f"{where}.{key} = {_int_text(node_index)} names a side node")
     return problems
 
 
@@ -398,8 +478,8 @@ def _loop_problems(layout: Layout) -> list[str]:
     """Each loop: an existing lane, one per lane, one node up, never touching a side node."""
     problems: list[str] = []
     per_lane: dict[int, int] = {}
-    for j, loop in enumerate(layout.loops):
-        where = f"{LAYOUT_LOOPS_KEY}[{j}]"
+    for loop_index, loop in enumerate(layout.loops):
+        where = f"{LAYOUT_LOOPS_KEY}[{loop_index}]"
         if not _in_range(loop.lane, len(layout.lanes)):
             problems.append(f"{where}.{LOOP_LANE_KEY} = {_int_text(loop.lane)} is not a lane")
             continue
@@ -409,9 +489,9 @@ def _loop_problems(layout: Layout) -> list[str]:
         nodes = layout.lanes[loop.lane].nodes
         ends = ((LOOP_FROM_KEY, loop.from_node), (LOOP_TO_KEY, loop.to_node))
         bad_ends = [
-            f"{where}.{key} = {_int_text(index)}"
-            for key, index in ends
-            if not _in_range(index, len(nodes))
+            f"{where}.{key} = {_int_text(node_index)}"
+            for key, node_index in ends
+            if not _in_range(node_index, len(nodes))
         ]
         if bad_ends:
             problems.extend(f"{end} is not a node of lane {loop.lane}" for end in bad_ends)
@@ -439,29 +519,31 @@ def _rejoin_problems(layout: Layout) -> list[str]:
         (REJOIN_FROM_LANE_KEY, rejoin.from_lane, REJOIN_FROM_NODE_KEY, rejoin.from_node),
         (REJOIN_TO_LANE_KEY, rejoin.to_lane, REJOIN_TO_NODE_KEY, rejoin.to_node),
     )
-    for lane_key, lane, node_key, node in ends:
-        if not _in_range(lane, len(layout.lanes)):
-            problems.append(f"{where}.{lane_key} = {_int_text(lane)} is not a lane")
+    for lane_key, index, node_key, node_index in ends:
+        if not _in_range(index, len(layout.lanes)):
+            problems.append(f"{where}.{lane_key} = {_int_text(index)} is not a lane")
             continue
-        last = len(layout.lanes[lane].nodes) - 1
-        if node != last:
+        last = len(layout.lanes[index].nodes) - 1
+        if node_index != last:
             problems.append(
-                f"{where}.{node_key} = {_int_text(node)} is not the last node of lane {lane}"
+                f"{where}.{node_key} = {_int_text(node_index)} is not the last node of lane {index}"
             )
-    problems += _string_problems(rejoin.label, f"{where}.{REJOIN_LABEL_KEY}", 1, MAX_REJOIN_LABEL)
+    problems += _string_problems(
+        rejoin.label, f"{where}.{REJOIN_LABEL_KEY}", MIN_REJOIN_LABEL, MAX_REJOIN_LABEL
+    )
     return problems
 
 
 def _bound_problems(layout: Layout) -> list[str]:
     """Every ``layout-bound`` problem of a parsed sidecar, in document order."""
-    problems = _string_problems(layout.alt, LAYOUT_ALT_KEY, 1, MAX_ALT)
+    problems = _string_problems(layout.alt, LAYOUT_ALT_KEY, MIN_ALT, MAX_ALT)
     count = len(layout.lanes)
     if not MIN_LAYOUT_LANES <= count <= MAX_LAYOUT_LANES:
         problems.append(
             f"{LAYOUT_LANES_KEY} has {count} lanes (allowed {MIN_LAYOUT_LANES}..{MAX_LAYOUT_LANES})"
         )
-    for i, lane in enumerate(layout.lanes):
-        problems += _lane_problems(lane, f"{LAYOUT_LANES_KEY}[{i}]")
+    for index, lane in enumerate(layout.lanes):
+        problems += _lane_problems(lane, f"{LAYOUT_LANES_KEY}[{index}]")
     return problems + _loop_problems(layout) + _rejoin_problems(layout)
 
 
@@ -500,3 +582,192 @@ def layout_findings(
             )
         )
     return findings
+
+
+# --- house SVG (section 2.5) -----------------------------------------------------------------
+
+
+def _num(value: float) -> str:
+    return format(value, "g")
+
+
+def _xml(text: str) -> str:
+    """``text`` with ``&``, ``<``, ``>`` and ``"`` escaped for SVG text and attribute values."""
+    return escape(text, {'"': "&quot;"})
+
+
+def _lane_x(index: int) -> int:
+    return HOUSE_MARGIN + index * (HOUSE_PILL_WIDTH + HOUSE_GUTTER)
+
+
+def _node_y(lane: Lane, node_index: int) -> int:
+    drop = HOUSE_SIDE_DROP if lane.nodes[node_index].side else 0
+    return HOUSE_TOP + node_index * HOUSE_ROW_PITCH + drop
+
+
+def _path(d: str, color: str, width: float, arrow: str, *, dashed: bool = False) -> str:
+    dash = HOUSE_DASH_ATTR if dashed else ""
+    return (
+        f'<path d="{d}"{HOUSE_NO_FILL_ATTR} stroke="{color}" stroke-width="{_num(width)}"{dash} '
+        f'marker-end="url(#{arrow})"/>'
+    )
+
+
+def _text(x: float, y: float, size: float, color: str, text: str, *, extra: str = "") -> str:
+    """One ``<text>`` element; ``extra`` holds further attributes, each with a leading space."""
+    return (
+        f'<text x="{_num(x)}" y="{_num(y)}" font-size="{_num(size)}"{extra} fill="{color}">'
+        f"{_xml(text)}</text>"
+    )
+
+
+def _pill(x: int, y: int, node: Node, palette: Mapping[str, str]) -> list[str]:
+    """A node's rect, name and sub (a side pill is dashed, unshadowed and has a muted name)."""
+    if node.side:
+        finish = HOUSE_DASH_ATTR
+        name_color = palette[PALETTE_MUTED]
+    else:
+        finish = f' filter="url(#{HOUSE_SHADOW_ID})"'
+        name_color = palette[PALETTE_SPINE]
+    rect = (
+        f'<rect x="{_num(x)}" y="{_num(y)}" width="{_num(HOUSE_PILL_WIDTH)}" '
+        f'height="{_num(HOUSE_PILL_HEIGHT)}" rx="{_num(HOUSE_PILL_RADIUS)}" '
+        f'fill="{palette[PALETTE_CARD_FILL]}" stroke="{palette[PALETTE_LINK]}" '
+        f'stroke-width="{_num(HOUSE_PILL_STROKE)}"{finish}/>'
+    )
+    text_x = x + HOUSE_TEXT_DX
+    name_y = y + (HOUSE_NAME_DY if node.sub else HOUSE_NAME_ONLY_DY)
+    name = _text(text_x, name_y, HOUSE_NAME_SIZE, name_color, node.name, extra=HOUSE_BOLD_ATTR)
+    out = [rect, name]
+    if node.sub:
+        muted = palette[PALETTE_MUTED]
+        out.append(_text(text_x, y + HOUSE_SUB_DY, HOUSE_SMALL_SIZE, muted, node.sub))
+    return out
+
+
+def _canvas(layout: Layout) -> tuple[int, int, int | None]:
+    """``(width, height, rejoin baseline or None)`` by the section 2.5 formulas."""
+    count = len(layout.lanes)
+    width = 2 * HOUSE_MARGIN + count * HOUSE_PILL_WIDTH + (count - 1) * HOUSE_GUTTER
+    nodes_bottom = max(
+        _node_y(lane, len(lane.nodes) - 1) + HOUSE_PILL_HEIGHT for lane in layout.lanes
+    )
+    if layout.rejoin is None:
+        return width, nodes_bottom + HOUSE_BOTTOM_PAD, None
+    baseline = nodes_bottom + HOUSE_REJOIN_DROP
+    return width, baseline + HOUSE_REJOIN_PAD, baseline
+
+
+def _spine(layout: Layout, palette: Mapping[str, str]) -> list[str]:
+    """Left to right: each lane's ``out`` right-centre to the next lane's ``in`` left-centre."""
+    out: list[str] = []
+    half = HOUSE_PILL_HEIGHT / 2
+    for index, (left, right) in enumerate(zip(layout.lanes, layout.lanes[1:], strict=False)):
+        x1 = _lane_x(index) + HOUSE_PILL_WIDTH
+        y1 = _node_y(left, left.out_node) + half
+        x2 = _lane_x(index + 1)
+        y2 = _node_y(right, right.in_node) + half
+        if y1 == y2:
+            d = f"M{_num(x1)},{_num(y1)} H{_num(x2)}"
+        else:  # an elbow in the middle of the gutter
+            mid = x1 + HOUSE_GUTTER / 2
+            d = f"M{_num(x1)},{_num(y1)} H{_num(mid)} V{_num(y2)} H{_num(x2)}"
+        out.append(_path(d, palette[PALETTE_SPINE], HOUSE_SPINE_STROKE, HOUSE_SPINE_ARROW_ID))
+    return out
+
+
+def _lane_body(index: int, lane: Lane, loop: Loop | None, palette: Mapping[str, str]) -> list[str]:
+    """One lane's down links (each with its branch label), its loop up-arrow, then its pills."""
+    x = _lane_x(index)
+    link_x = x + (HOUSE_LINK_DX if loop is None else HOUSE_LOOP_LINK_DX)
+    link, muted = palette[PALETTE_LINK], palette[PALETTE_MUTED]
+    out: list[str] = []
+    for node_index in range(1, len(lane.nodes)):
+        top = _node_y(lane, node_index - 1) + HOUSE_PILL_HEIGHT
+        bottom = _node_y(lane, node_index)
+        d = f"M{_num(link_x)},{_num(top)} V{_num(bottom)}"
+        out.append(_path(d, link, HOUSE_LINK_STROKE, HOUSE_LINK_ARROW_ID))
+        node = lane.nodes[node_index]
+        if node.side:
+            label_x = link_x + HOUSE_BRANCH_LABEL_DX
+            label_y = (top + bottom) / 2 + HOUSE_BRANCH_LABEL_DY
+            out.append(_text(label_x, label_y, HOUSE_SMALL_SIZE, muted, node.branch_label))
+    if loop is not None:  # up from node ``from``'s top to node ``to``'s bottom, arrowhead on top
+        loop_x = x + HOUSE_LOOP_DX
+        start = _node_y(lane, loop.from_node)
+        end = _node_y(lane, loop.to_node) + HOUSE_PILL_HEIGHT
+        d = f"M{_num(loop_x)},{_num(start)} V{_num(end)}"
+        out.append(_path(d, link, HOUSE_LINK_STROKE, HOUSE_LINK_ARROW_ID))
+    for node_index, node in enumerate(lane.nodes):
+        out += _pill(x, _node_y(lane, node_index), node, palette)
+    return out
+
+
+def _rejoin_elements(
+    layout: Layout, rejoin: Rejoin, baseline: int, palette: Mapping[str, str]
+) -> list[str]:
+    """The dashed return: down from ``from_node``, across, up into ``to_node``; then its label."""
+    start_x = _lane_x(rejoin.from_lane) + HOUSE_LINK_DX
+    start_y = _node_y(layout.lanes[rejoin.from_lane], rejoin.from_node) + HOUSE_PILL_HEIGHT
+    end_x = _lane_x(rejoin.to_lane) + HOUSE_LINK_DX
+    end_y = _node_y(layout.lanes[rejoin.to_lane], rejoin.to_node) + HOUSE_PILL_HEIGHT
+    end_y += HOUSE_REJOIN_END_GAP
+    d = f"M{_num(start_x)},{_num(start_y)} V{_num(baseline)} H{_num(end_x)} V{_num(end_y)}"
+    path = _path(d, palette[PALETTE_LINK], HOUSE_REJOIN_STROKE, HOUSE_LINK_ARROW_ID, dashed=True)
+    label = _text(
+        (start_x + end_x) / 2,
+        baseline - HOUSE_REJOIN_LABEL_RISE,
+        HOUSE_SMALL_SIZE,
+        palette[PALETTE_MUTED],
+        rejoin.label,
+        extra=HOUSE_TEXT_MIDDLE_ATTR,
+    )
+    return [path, label]
+
+
+def draw_svg(layout: Layout, theme: str) -> str:
+    """The house SVG of ``layout`` in ``theme`` (a ``HOUSE_PALETTES`` key) as LF text (section 2.5).
+
+    ``layout`` must have passed :func:`layout_findings` (every index in range, every bound held).
+    The element order is fixed: marker comment, ``<defs>``, card, lane labels, spine, then per lane
+    its down links and branch labels, its loop and its pills, and last the rejoin and its label.
+    """
+    palette = HOUSE_PALETTES[theme]
+    width, height, baseline = _canvas(layout)
+    w, h = _num(width), _num(height)
+    inset = _num(HOUSE_CARD_INSET)
+    lines = [
+        f'{HOUSE_SVG_ROOT_START}viewBox="0 0 {w} {h}" width="{w}" height="{h}" '
+        f'font-family="{HOUSE_FONT_FAMILY}" role="img" aria-label="{_xml(layout.alt)}">',
+        HOUSE_SVG_MARKER,
+        HOUSE_SVG_DEFS_TEMPLATE.format(
+            link=palette[PALETTE_LINK],
+            spine=palette[PALETTE_SPINE],
+            shadow=palette[PALETTE_SHADOW],
+        ).rstrip("\n"),
+        f'<rect x="{inset}" y="{inset}" width="{_num(width - 2 * HOUSE_CARD_INSET)}" '
+        f'height="{_num(height - 2 * HOUSE_CARD_INSET)}" rx="{_num(HOUSE_CARD_RADIUS)}" '
+        f'fill="{palette[PALETTE_CARD_FILL]}" stroke="{palette[PALETTE_CARD_STROKE]}" '
+        f'stroke-width="{_num(HOUSE_CARD_STROKE)}"/>',
+    ]
+    label_extra = f'{HOUSE_BOLD_ATTR} letter-spacing="{HOUSE_LANE_LABEL_SPACING}"'
+    muted = palette[PALETTE_MUTED]
+    lines += (
+        _text(
+            _lane_x(index),
+            HOUSE_LANE_LABEL_Y,
+            HOUSE_LANE_LABEL_SIZE,
+            muted,
+            lane.label,
+            extra=label_extra,
+        )
+        for index, lane in enumerate(layout.lanes)
+    )
+    lines += _spine(layout, palette)
+    loops = {loop.lane: loop for loop in layout.loops}
+    for index, lane in enumerate(layout.lanes):
+        lines += _lane_body(index, lane, loops.get(index), palette)
+    if layout.rejoin is not None and baseline is not None:
+        lines += _rejoin_elements(layout, layout.rejoin, baseline, palette)
+    lines.append(HOUSE_SVG_END)
+    return "\n".join(lines) + "\n"

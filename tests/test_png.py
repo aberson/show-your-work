@@ -72,14 +72,6 @@ def _copy(src: Path, dest: Path) -> Path:
     return dest
 
 
-def _snapshot(target: Path) -> dict[str, bytes]:
-    return {
-        p.relative_to(target).as_posix(): p.read_bytes()
-        for p in sorted(target.rglob("*"))
-        if p.is_file()
-    }
-
-
 def _index(target: Path) -> dict[str, Any]:
     document: dict[str, Any] = json.loads((target / "workflows.json").read_text(encoding="utf-8"))
     return document
@@ -251,13 +243,13 @@ def test_oversized_canvas_exits_2_before_png_and_writes_nothing(
     """A budget-passing diagram whose SVG is huge (e.g. inflated by a ``%%{init}%%`` directive)
     never reaches the native rasterizer, which would abort the whole process."""
     target = _copy(GOOD, tmp_path / "good")
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     fake = FakeRenderer(viewboxes={"Minimal Example": "0 0 50000 50000"})
     _use(monkeypatch, fake)
     assert main(["render", str(target), "--png"]) == EXIT_GATE
     err = capsys.readouterr().err
     assert "cannot rasterize minimal (light): canvas would be 100000x100000 px" in err
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
     for source, _, _ in fake.png_calls:  # only the anchors were rasterized
         assert without_front_matter(source) in (GARBAGE, KNOWN_GOOD)
 
@@ -279,11 +271,11 @@ def test_broken_anchor_exits_2_and_writes_nothing(
     target = _copy(GOOD, tmp_path / "good")
     (target / "rasters").mkdir()
     (target / "rasters" / "stray.png").write_bytes(b"stray")
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     _use(monkeypatch, fake)
     assert main(["render", str(target), "--png"]) == EXIT_GATE
     assert MSG_ANCHOR_BROKEN in capsys.readouterr().err
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
     assert not (target / "README.md").exists()
     # No diagram was ever rasterized: only anchor sources reached png().
     for source, _, _ in fake.png_calls:
@@ -305,11 +297,11 @@ def test_raster_failure_after_anchors_exits_2_and_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     target = _copy(REALISTIC, tmp_path / "realistic")
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     _use(monkeypatch, FakeRenderer(fail_png_titles=frozenset({"Recipe Scaling Pipeline"})))
     assert main(["render", str(target), "--png"]) == EXIT_GATE
     assert "cannot rasterize recipe-scaling-pipeline (light)" in capsys.readouterr().err
-    assert _snapshot(target) == before  # the other four rendered in memory, none written
+    assert fakes.snapshot(target) == before  # the other four rendered in memory, none written
 
 
 def test_failing_set_with_png_exits_1_and_writes_nothing(
@@ -317,11 +309,11 @@ def test_failing_set_with_png_exits_1_and_writes_nothing(
 ) -> None:
     target = _copy(GOOD, tmp_path / "good")
     (target / "broken.mmd").write_bytes(b"%% Broken\n%% Summary: no other fields\n\nflowchart LR\n")
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     fake = FakeRenderer()
     _use(monkeypatch, fake)
     assert main(["render", str(target), "--png"]) == EXIT_FINDINGS
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
     assert fake.png_calls == []
 
 
@@ -333,7 +325,7 @@ def test_png_without_mermaidx_exits_2_with_documented_message(
 ) -> None:
     monkeypatch.setitem(sys.modules, "mermaidx", None)  # the real load() then finds no renderer
     target = _copy(GOOD, tmp_path / "good")
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     assert main(["render", str(target), "--png"]) == EXIT_GATE
     err = capsys.readouterr().err
     assert err.strip() == f"show-your-work render: {MSG_PNG_RENDERER_MISSING}"
@@ -343,7 +335,7 @@ def test_png_without_mermaidx_exits_2_with_documented_message(
     document = json.loads(captured.out)
     assert (document["exit_code"], document["verb"]) == (EXIT_GATE, "render")
     assert MSG_PNG_RENDERER_MISSING in captured.err
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
 
 
 def test_png_with_broken_mermaidx_exits_2(
@@ -392,16 +384,16 @@ def test_png_rerun_changes_no_bytes_and_check_passes(
     target = _copy(GOOD, tmp_path / "good")
     _use(monkeypatch, FakeRenderer())
     assert main(["render", str(target), "--png"]) == EXIT_OK
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     capsys.readouterr()
     assert main(["render", str(target), "--png"]) == EXIT_OK
     assert "rasters/minimal-dark.png: up to date" in capsys.readouterr().out
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
     assert main(["render", str(target), "--png", "--check"]) == EXIT_OK
     # A plain render keeps the entries (both files exist) and --check without --png agrees.
     assert main(["render", str(target)]) == EXIT_OK
     assert main(["render", str(target), "--check"]) == EXIT_OK
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
 
 
 def test_png_check_reports_a_changed_raster_and_writes_nothing(
@@ -412,7 +404,7 @@ def test_png_check_reports_a_changed_raster_and_writes_nothing(
     assert main(["render", str(target), "--png"]) == EXIT_OK
     (target / "rasters" / "minimal-dark.png").write_bytes(b"tampered")
     (target / "rasters" / "stray.png").write_bytes(b"stray")
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     capsys.readouterr()
     assert main(["render", str(target), "--png", "--check"]) == EXIT_FINDINGS
     captured = capsys.readouterr()
@@ -420,7 +412,7 @@ def test_png_check_reports_a_changed_raster_and_writes_nothing(
     assert "rasters/stray.png: stale" in captured.out
     assert "rasters/minimal-light.png: up to date" in captured.out
     assert "--png" in captured.err  # the hint names the command that fixes it
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
     # Without --png, --check masks rasters (host-dependent bytes) and passes.
     assert main(["render", str(target), "--check"]) == EXIT_OK
 
@@ -616,17 +608,12 @@ def test_rasters_that_is_not_a_plain_directory_exits_2(
 def test_rasters_junction_is_refused_and_its_target_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A junction needs no privilege (unlike a symlink) and ``is_symlink`` does not report it."""
-    if sys.platform != "win32":
-        pytest.skip("junctions are a Windows feature")
-    import _winapi
-
+    """A ``rasters`` junction (``fakes.junction``) is refused like a symlink."""
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (elsewhere / "stray.png").write_bytes(b"stray")
     target = _copy(GOOD, tmp_path / "good")
-    _winapi.CreateJunction(str(elsewhere), str(target / "rasters"))
-    assert (target / "rasters").is_junction() and not (target / "rasters").is_symlink()
+    fakes.junction(target / "rasters", elsewhere)
     _use(monkeypatch, FakeRenderer())
     assert main(["render", str(target), "--png"]) == EXIT_GATE
     assert "not a plain directory" in capsys.readouterr().err
@@ -688,7 +675,7 @@ def test_real_png_is_deterministic_and_garbage_raises_through_png(tmp_path: Path
         renderer.png(real, GARBAGE, "dark")
     target = _copy(GOOD, tmp_path / "good")
     assert main(["render", str(target), "--png"]) == EXIT_OK
-    before = _snapshot(target)
+    before = fakes.snapshot(target)
     assert main(["render", str(target), "--png"]) == EXIT_OK
-    assert _snapshot(target) == before
+    assert fakes.snapshot(target) == before
     assert main(["render", str(target), "--png", "--check"]) == EXIT_OK

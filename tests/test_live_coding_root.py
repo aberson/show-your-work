@@ -36,6 +36,7 @@ from show_your_work.constants import (
     INTRO_NAME,
     README_NAME,
 )
+from tests.fakes import snapshot
 
 #: Committed fixtures the privacy guard compares against the live set.
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -76,14 +77,6 @@ def _live_sources() -> list[Path]:
     if not sources:
         pytest.skip("live coding-root test: no *.mmd files under <coding-root>/docs/workflows")
     return sources
-
-
-def _snapshot(directory: Path) -> dict[str, bytes]:
-    return {
-        p.relative_to(directory).as_posix(): p.read_bytes()
-        for p in sorted(directory.rglob("*"))
-        if p.is_file()
-    }
 
 
 def _header_contents(text: str) -> list[str]:
@@ -151,9 +144,9 @@ def test_live_coding_root_check_and_render(
         lacking = {name for name, raw in before.items() if not _has_alt(raw)}
         failing = {file["file"] for file in report["files"] if not file["pass"]}
         assert failing == lacking
-        staged = _snapshot(target)
+        staged = snapshot(target)
         assert main(["render", str(target)]) == EXIT_FINDINGS
-        assert _snapshot(target) == staged, "a refused render must write nothing"
+        assert snapshot(target) == staged, "a refused render must write nothing"
         assert not (target / README_NAME).exists()
         assert not (target / INDEX_NAME).exists()
     else:

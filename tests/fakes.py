@@ -4,10 +4,15 @@ installs) and the ``check --json`` document readers."""
 from __future__ import annotations
 
 import json
+import shutil
 import struct
+import sys
 import zlib
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from show_your_work.constants import COMMENT_PREFIX, GARBAGE
 
@@ -125,6 +130,43 @@ class FakeRenderer:
             raise RuntimeError(f"raster failed for {title}")
         width, height = FAKE_PNG_SIZE
         return solid_png(int(width * scale), int(height * scale), background)
+
+
+def junction(link: Path, target: Path) -> None:
+    """Make ``link`` a directory junction to ``target``; skips the test off Windows.
+
+    A junction needs no privilege (unlike a symlink) and ``is_symlink`` does not report it.
+    """
+    if sys.platform != "win32":
+        pytest.skip("junctions are a Windows feature")
+    import _winapi
+
+    _winapi.CreateJunction(str(target), str(link))
+    assert link.is_junction() and not link.is_symlink()
+
+
+def layout_project(root: Path, source: Path | None = None) -> Path:
+    """``root/docs/workflows`` holding a copy of ``source`` (created empty when it is None).
+
+    ``root`` gets a ``.git`` marker so the generated README's ``source_dir`` (and so its bytes) is
+    the same on every host.
+    """
+    (root / ".git").mkdir(parents=True)
+    target = root / "docs" / "workflows"
+    if source is None:
+        target.mkdir(parents=True)
+    else:
+        shutil.copytree(source, target)
+    return target
+
+
+def snapshot(target: Path) -> dict[str, bytes]:
+    """Every file under ``target`` (recursively) by its POSIX relative path -> its bytes."""
+    return {
+        p.relative_to(target).as_posix(): p.read_bytes()
+        for p in sorted(target.rglob("*"))
+        if p.is_file()
+    }
 
 
 def json_document(out: str) -> dict[str, Any]:

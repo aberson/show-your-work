@@ -12,7 +12,15 @@
   section 3.4, items sorted by id, ``source_dir`` / ``source_path`` relative to the nearest
   ``.git`` ancestor (never cwd), ``source_sha256`` over CRLF-normalized bytes, ``engine`` from an
   ``<id>.excalidraw.svg`` sibling, and ``rasters`` preserved from the previous index only when
-  both referenced files still exist (``null`` otherwise; raster files are never deleted here).
+  both referenced files still exist (``null`` otherwise; PNG raster files are never deleted here).
+* ``rasters/<id>-{light,dark}.svg`` -- the house SVGs of every diagram with a ``<id>.layout.json``
+  sidecar (plan section 2.5), embedded in its README section through ``<picture>``. They are
+  written before the README and index; an orphan house SVG (a regular top-level ``*-light.svg`` /
+  ``*-dark.svg`` whose first child is ``HOUSE_SVG_MARKER``) is deleted LAST, and a generated path
+  holding anything unmarked is exit 2. A linked ``rasters/`` is exit 2 whenever a file may be
+  written there; otherwise (a sidecar-less plain render) cleanup is skipped silently through the
+  link.
+  ``render --check`` reports a changed, missing or orphan house SVG as stale.
 
 Every reader normalizes CRLF to LF, and every write is LF / UTF-8 through an atomic replace, so
 the bytes never depend on ``core.autocrlf``. A generated file whose content is already current
@@ -42,6 +50,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import html
 import json
 import os
 import tempfile
@@ -58,7 +67,9 @@ from show_your_work.checks import (
     Report,
     check_dir,
     discover,
+    discover_layouts,
     error_detail,
+    read_layout,
     read_source,
 )
 from show_your_work.constants import (
@@ -75,6 +86,10 @@ from show_your_work.constants import (
     GENERATED_MARKER,
     GENERATOR_NAME,
     GIT_MARKER,
+    HOUSE_SVG_FILE,
+    HOUSE_SVG_MARKER,
+    HOUSE_SVG_ROOT_START,
+    HOUSE_SVG_SUFFIXES,
     INDENTED_CODE_RE,
     INDEX_GENERATED_AT,
     INDEX_ITEM_ID,
@@ -86,6 +101,7 @@ from show_your_work.constants import (
     INDEX_SCHEMA,
     INLINE_LINK_RE,
     INTRO_NAME,
+    LAYOUT_SUFFIX,
     MAX_GENERATED_BYTES,
     MERMAID_FENCE_INFO,
     MIN_FENCE,
@@ -98,18 +114,28 @@ from show_your_work.constants import (
     MSG_RASTERS_NOT_DIR,
     MSG_SOURCE_CHANGED,
     MSG_STAMP_NOT_UTC,
+    MSG_SVG_NOT_GENERATED,
     MSG_SYMLINK_SOURCE,
     NO_PROJECT_ROOT_DIR,
+    RASTER_DARK,
     RASTER_ENTRY_KEYS,
     RASTER_FILE,
+    RASTER_LIGHT,
     RASTER_SUFFIX,
     RASTER_THEMES,
     RASTERS_DIR,
     README_ALT_LABEL,
+    README_ALT_SOURCE_LABEL,
     README_CONTENTS_HEADING,
     README_DRAWN_FROM,
+    README_LAYOUT_MARKER_LINES,
+    README_LAYOUT_REGEN,
+    README_MARKER_INDENT,
+    README_MARKER_LINES,
+    README_MARKER_OPEN,
     README_NAME,
     README_NOT_SHOWN_LABEL,
+    README_PICTURE_TEMPLATE,
     README_REGEN_HEADING,
     README_SOURCE_LABEL,
     README_TITLE,
@@ -128,6 +154,7 @@ from show_your_work.header import (
     normalize_newlines,
     sha256_lf,
 )
+from show_your_work.layout import Layout, draw_svg, layout_findings, parse_layout
 from show_your_work.renderer import RasterRenderer
 
 __all__ = [
@@ -137,6 +164,7 @@ __all__ = [
     "build_index",
     "build_readme",
     "github_anchor",
+    "house_svg_path",
     "index_up_to_date",
     "project_root",
     "raster_path",
@@ -150,13 +178,14 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class Diagram:
-    """One checked source: its id, parsed header, LF-normalized text and engine."""
+    """One checked source: its id, parsed header, LF-normalized text, engine and layout sidecar."""
 
     id: str
     header: Header
     text: str
     sha256: str
     engine: str
+    layout: Layout | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,10 +253,19 @@ def _source_path(source_dir: str, diagram_id: str) -> str:
 # --- reading -------------------------------------------------------------------------------
 
 
+def _load_layout(path: Path, diagram_id: str, source_raw: bytes, *, beside: bool) -> Layout:
+    """Re-read a sidecar after ``check`` passed; one that no longer passes it is exit 2."""
+    raw = read_layout(path)
+    if layout_findings(diagram_id, raw, source_raw, beside_drawing=beside):
+        raise GateError(MSG_SOURCE_CHANGED.format(path=path.as_posix()))
+    return parse_layout(raw)
+
+
 def _load_diagrams(target: Path) -> list[Diagram]:
-    """Re-read every source after ``check`` passed; a file that no longer parses is exit 2."""
+    """Re-read every source and sidecar after ``check``; one that no longer passes is exit 2."""
     sources, drawings = discover(target)
     drawn = {path.name[: -len(EXCALIDRAW_SUFFIX)] for path in drawings}
+    sidecars = {path.name[: -len(LAYOUT_SUFFIX)]: path for path in discover_layouts(target)}
     diagrams: list[Diagram] = []
     for path in sources:
         raw = read_source(path)
@@ -237,7 +275,13 @@ def _load_diagrams(target: Path) -> list[Diagram]:
             raise GateError(MSG_SOURCE_CHANGED.format(path=path.as_posix()))
         diagram_id = path.name[: -len(SOURCE_SUFFIX)]
         engine = ENGINE_EXCALIDRAW if diagram_id in drawn else ENGINE_MERMAID
-        diagrams.append(Diagram(diagram_id, header, text, sha256_lf(raw), engine))
+        sidecar = sidecars.get(diagram_id)
+        layout = (
+            None
+            if sidecar is None
+            else _load_layout(sidecar, diagram_id, raw, beside=diagram_id in drawn)
+        )
+        diagrams.append(Diagram(diagram_id, header, text, sha256_lf(raw), engine, layout))
     diagrams.sort(key=lambda d: d.id)
     return diagrams
 
@@ -396,8 +440,31 @@ def _regen_command(source_dir: str, *extra: str) -> str:
     return " ".join([GENERATOR_NAME, "render", target, *extra])
 
 
+def _marker_comment(*, layouts: bool) -> str:
+    """The GENERATED comment; it names the sidecars only when the folder has one (section 2.5)."""
+    head = f"{README_MARKER_OPEN}{GENERATED_MARKER}."
+    lines = README_LAYOUT_MARKER_LINES if layouts else README_MARKER_LINES
+    return "\n".join([head, *(README_MARKER_INDENT + line for line in lines)]) + "\n"
+
+
+def _diagram_block(diagram: Diagram, fence_block: str) -> str:
+    """The mermaid fence, or for a sidecar diagram the section 2.5 ``<picture>`` embed around it."""
+    if diagram.layout is None:
+        return fence_block
+    return README_PICTURE_TEMPLATE.format(
+        dark=house_svg_path(diagram.id, RASTER_DARK),
+        light=house_svg_path(diagram.id, RASTER_LIGHT),
+        alt=html.escape(diagram.layout.alt, quote=True),
+        fence=fence_block,
+    )
+
+
 def build_readme(diagrams: Sequence[Diagram], intro: str | None, source_dir: str) -> str:
-    """The generated ``README.md`` text (LF, deterministic for identical inputs)."""
+    """The generated ``README.md`` text (LF, deterministic for identical inputs).
+
+    A sidecar-less folder gets the Phase 1 text byte for byte; a sidecar diagram's section embeds
+    its house SVGs (section 2.5) and labels the header Alt as the mermaid source's.
+    """
     slugger = _Slugger()
     slugger.slug(README_TITLE)
     intro_text = intro.rstrip("\n") if intro is not None and intro.strip() else None
@@ -407,13 +474,9 @@ def build_readme(diagrams: Sequence[Diagram], intro: str | None, source_dir: str
     slugger.slug(README_CONTENTS_HEADING)
     anchors = [slugger.slug(d.header.title) for d in diagrams]
     slugger.slug(README_REGEN_HEADING)
+    layouts = any(d.layout is not None for d in diagrams)
 
-    parts: list[str] = [
-        f"<!-- {GENERATED_MARKER}.\n"
-        f"     Produced by `{GENERATOR_NAME} render` from {INTRO_NAME} and the {SOURCE_SUFFIX}\n"
-        "     files in this directory. Edit those and re-run; edits here are overwritten. -->\n",
-        f"# {README_TITLE}\n\n",
-    ]
+    parts: list[str] = [_marker_comment(layouts=layouts), f"# {README_TITLE}\n\n"]
     if intro_text is not None:
         parts.append(f"{intro_text}\n\n")
     parts.append(f"## {README_CONTENTS_HEADING}\n\n")
@@ -428,17 +491,22 @@ def build_readme(diagrams: Sequence[Diagram], intro: str | None, source_dir: str
         parts.append(f"{README_SOURCE_LABEL} [{_code_span(name)}]({name})\n\n")
         parts.append(f"{README_DRAWN_FROM}\n\n")
         parts.extend(f"- {_code_span(source)}\n" for source in h.sources)
-        parts.append(f"\n{README_ALT_LABEL} {h.alt}\n\n")
+        alt_label = README_ALT_LABEL if diagram.layout is None else README_ALT_SOURCE_LABEL
+        parts.append(f"\n{alt_label} {h.alt}\n\n")
         parts.append(f"{README_NOT_SHOWN_LABEL} {h.not_shown}\n\n")
         body = diagram.text.rstrip() + "\n"
         fence = "`" * max(MIN_FENCE, _longest_backtick_run(body) + 1)
-        parts.append(f"{fence}{MERMAID_FENCE_INFO}\n{body}{fence}\n")
+        parts.append(_diagram_block(diagram, f"{fence}{MERMAID_FENCE_INFO}\n{body}{fence}\n"))
 
     parts.append(
         f"\n---\n\n## {README_REGEN_HEADING}\n\n"
         f"This file and `{INDEX_NAME}` are generated from the `*{SOURCE_SUFFIX}` sources and "
         f"`{INTRO_NAME}`.\nAfter editing any of them, run from the project root:\n\n"
         f"```\n{_regen_command(source_dir)}\n```\n\n"
+    )
+    if layouts:
+        parts.append(f"{README_LAYOUT_REGEN}\n\n")
+    parts.append(
         f"`{_regen_command(source_dir, '--check')}` writes nothing and exits 1 when this file "
         f"or `{INDEX_NAME}` is out of date.\n"
     )
@@ -455,6 +523,11 @@ def _non_negative_int(value: object) -> bool:
 def raster_path(diagram_id: str, theme: str) -> str:
     """The index ``path`` of one raster: ``rasters/<id>-<theme>.png`` (POSIX, TARGET-relative)."""
     return f"{RASTERS_DIR}/{RASTER_FILE.format(id=diagram_id, theme=theme)}"
+
+
+def house_svg_path(diagram_id: str, theme: str) -> str:
+    """The README path of one house SVG: ``rasters/<id>-<theme>.svg`` (POSIX, TARGET-relative)."""
+    return f"{RASTERS_DIR}/{HOUSE_SVG_FILE.format(id=diagram_id, theme=theme)}"
 
 
 def _raster_entry(
@@ -678,15 +751,19 @@ def _os_reason(exc: OSError) -> str:
     return exc.strerror or type(exc).__name__
 
 
-def _rasters_dir(target: Path) -> Path | None:
+def _rasters_dir(target: Path, *, guarded: bool = True) -> Path | None:
     """``TARGET/rasters`` when it is a plain directory, ``None`` when absent; exit 2 otherwise.
 
     A symlink or a Windows junction (which ``is_symlink`` does not report) is refused, so neither
-    writing nor orphan cleanup ever reaches through a link into another directory.
+    writing nor orphan cleanup ever reaches through a link into another directory. Unguarded (a
+    run that writes nothing there: a plain render of a sidecar-less folder), such a ``rasters/``
+    is skipped silently instead (``None``, plan section 2.5).
     """
     path = target / RASTERS_DIR
     try:
         if path.is_symlink() or path.is_junction() or (path.exists() and not path.is_dir()):
+            if not guarded:
+                return None
             raise GateError(MSG_RASTERS_NOT_DIR.format(path=path.as_posix()))
         return path if path.is_dir() else None
     except OSError as exc:
@@ -695,12 +772,12 @@ def _rasters_dir(target: Path) -> Path | None:
         ) from exc
 
 
-def _orphan_pngs(directory: Path | None, keep: frozenset[str]) -> list[Path]:
-    """Regular ``*.png`` files directly inside ``directory`` whose name is not in ``keep``.
+def _orphans(directory: Path | None, keep: frozenset[str], suffixes: tuple[str, ...]) -> list[Path]:
+    """Regular files directly inside ``directory`` named ``*<suffix>`` and not in ``keep``.
 
     ``keep`` holds case-folded names, so on a case-insensitive filesystem a just-written raster
     whose directory entry kept an older casing is never mistaken for an orphan. Symlinks,
-    directories (and anything beneath them) and non-PNG names are never candidates.
+    directories (and anything beneath them) and other names are never candidates.
     """
     if directory is None:
         return []
@@ -708,7 +785,7 @@ def _orphan_pngs(directory: Path | None, keep: frozenset[str]) -> list[Path]:
     try:
         with os.scandir(directory) as entries:
             for entry in entries:
-                if not entry.name.endswith(RASTER_SUFFIX) or entry.name.casefold() in keep:
+                if not entry.name.endswith(suffixes) or entry.name.casefold() in keep:
                     continue
                 if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
                     continue
@@ -717,6 +794,25 @@ def _orphan_pngs(directory: Path | None, keep: frozenset[str]) -> list[Path]:
         path = directory.as_posix()
         raise GateError(MSG_CANNOT_READ.format(path=path, reason=_os_reason(exc))) from exc
     return sorted(orphans, key=lambda p: p.name)
+
+
+def _is_generated_svg(path: Path) -> bool:
+    """A regular UTF-8 file (never a link) shaped like ``draw_svg`` output.
+
+    It starts with ``HOUSE_SVG_ROOT_START`` and ``HOUSE_SVG_MARKER`` is the whole line right after
+    the root start tag (closed by its first ``>``: attribute values escape ``>``). Lines compare as
+    LF, so a CRLF checkout still counts; the marker text anywhere else does not.
+    """
+    text = _read_generated(path)
+    if text is None or not text.startswith(HOUSE_SVG_ROOT_START):
+        return False
+    return text.startswith(f"\n{HOUSE_SVG_MARKER}\n", text.find(">") + 1)
+
+
+def _refuse_unmarked(path: Path) -> None:
+    if os.path.lexists(path) and not _is_generated_svg(path):
+        message = MSG_SVG_NOT_GENERATED.format(path=path.as_posix(), generator=GENERATOR_NAME)
+        raise GateError(message)
 
 
 def _delete(path: Path) -> None:
@@ -729,7 +825,7 @@ def _delete(path: Path) -> None:
 
 @dataclass(frozen=True, slots=True)
 class _RasterPlan:
-    """What ``render --png`` would change under ``rasters/``, decided before any write."""
+    """What a run would change under ``rasters/``, decided before any write."""
 
     directory: Path
     exists: bool
@@ -747,32 +843,60 @@ class _RasterPlan:
         return out
 
 
-def _plan_rasters(target: Path, rendered: Mapping[str, Mapping[str, bytes]]) -> _RasterPlan:
-    existing = _rasters_dir(target)
-    directory = target / RASTERS_DIR
-    files: list[tuple[str, bytes, bool]] = []
-    for diagram_id, per_theme in rendered.items():
+def _planned(existing: Path | None, name: str, data: bytes) -> tuple[str, bytes, bool]:
+    """A PNG raster: current only when the on-disk bytes equal ``data`` exactly."""
+    return name, data, existing is not None and _read_generated_bytes(existing / name) == data
+
+
+def _planned_text(existing: Path | None, name: str, data: bytes) -> tuple[str, bytes, bool]:
+    """A house SVG: compared as LF text, like ``README.md`` (a CRLF checkout stays current)."""
+    current = existing is not None and _read_generated(existing / name) == data.decode("utf-8")
+    return name, data, current
+
+
+def _plan_rasters(
+    target: Path,
+    rendered: Mapping[str, Mapping[str, bytes]] | None,
+    svgs: Mapping[str, Mapping[str, bytes]],
+) -> _RasterPlan:
+    """The PNGs (``--png`` only) and house SVGs (every sidecar diagram) to write, and the orphans.
+
+    Orphans are the unreferenced PNGs (``--png`` only) and the unreferenced house SVGs whose first
+    child is ``HOUSE_SVG_MARKER`` (plan section 2.5). ``rasters/`` is guarded whenever a file may be
+    written there; otherwise a link there is skipped silently. A house SVG path that holds anything
+    but a marked file is exit 2: it is never overwritten.
+    """
+    existing = _rasters_dir(target, guarded=rendered is not None or bool(svgs))
+    files = [
+        _planned(existing, RASTER_FILE.format(id=diagram_id, theme=theme), per_theme[theme])
+        for diagram_id, per_theme in (rendered or {}).items()
+        for theme in RASTER_THEMES
+    ]
+    for diagram_id, per_theme in svgs.items():
         for theme in RASTER_THEMES:
-            name = RASTER_FILE.format(id=diagram_id, theme=theme)
-            data = per_theme[theme]
-            current = existing is not None and _read_generated_bytes(directory / name) == data
-            files.append((name, data, current))
+            name = HOUSE_SVG_FILE.format(id=diagram_id, theme=theme)
+            if existing is not None:
+                _refuse_unmarked(existing / name)
+            files.append(_planned_text(existing, name, per_theme[theme]))
     keep = frozenset(name.casefold() for name, _, _ in files)
-    orphans = tuple(_orphan_pngs(existing, keep))
-    return _RasterPlan(directory, existing is not None, tuple(files), orphans)
+    orphans = [p for p in _orphans(existing, keep, HOUSE_SVG_SUFFIXES) if _is_generated_svg(p)]
+    if rendered is not None:
+        orphans = _orphans(existing, keep, (RASTER_SUFFIX,)) + orphans
+    directory = target / RASTERS_DIR
+    return _RasterPlan(directory, existing is not None, tuple(files), tuple(orphans))
 
 
 def _write_rasters(plan: _RasterPlan) -> None:
-    """Phase 1 of a ``--png`` write: create ``rasters/`` and (re)write every changed raster."""
-    if not plan.exists:
+    """Create ``rasters/`` when a file must be written and (re)write every changed file."""
+    changed = [(name, data) for name, data, current in plan.files if not current]
+    if changed and not plan.exists:
         try:
             plan.directory.mkdir()
         except OSError as exc:
             path = plan.directory.as_posix()
             raise GateError(MSG_CANNOT_WRITE.format(path=path, reason=_os_reason(exc))) from exc
-    for name, data, current in plan.files:
-        if not current:
-            write_atomic(plan.directory / name, data)
+    for name, data in changed:
+        write_atomic(plan.directory / name, data)
 
 
 def render_dir(
@@ -780,9 +904,10 @@ def render_dir(
 ) -> RenderResult:
     """Check, then regenerate (or with ``check_only`` compare) ``README.md`` + ``workflows.json``.
 
-    With ``rasterizer`` (``render --png``) the check renders every file (anchors first), the
-    raster anchors run and every raster is rendered in memory. The write order is then: changed
-    rasters, ``README.md`` + ``workflows.json``, and orphan deletion last.
+    Every sidecar diagram's house SVGs are drawn in memory (section 2.5). With ``rasterizer``
+    (``render --png``) the check renders every file (anchors first), the raster anchors run and
+    every raster is rendered in memory. The write order is then: changed rasters and house SVGs,
+    ``README.md`` + ``workflows.json``, and orphan deletion last.
 
     Raises :class:`GateError` (exit 2) when the gate cannot run or an output cannot be written.
     A failing check set returns exit 1 with nothing written; ``check_only`` returns exit 1 when
@@ -799,6 +924,11 @@ def render_dir(
         if not renderer_mod.raster_anchor_ok(rasterizer):
             raise GateError(MSG_ANCHOR_BROKEN)
         rendered = _render_rasters(diagrams, rasterizer)
+    svgs = {
+        d.id: {theme: draw_svg(d.layout, theme).encode("utf-8") for theme in RASTER_THEMES}
+        for d in diagrams
+        if d.layout is not None
+    }
     intro = _read_intro(target)
     source_dir = source_dir_of(target)
     readme_path = target / README_NAME
@@ -818,8 +948,8 @@ def render_dir(
     readme_current = existing_readme == readme
     mask_rasters = check_only and rendered is None
     index_current = index_up_to_date(existing_index, index, mask_rasters=mask_rasters)
-    plan = _plan_rasters(target, rendered) if rendered is not None else None
-    raster_statuses = plan.statuses(check_only=check_only) if plan is not None else []
+    plan = _plan_rasters(target, rendered, svgs)
+    raster_statuses = plan.statuses(check_only=check_only)
 
     if check_only:
         outputs = (
@@ -832,8 +962,7 @@ def render_dir(
         code = EXIT_FINDINGS if any(o.state == STATE_STALE for o in outputs) else EXIT_OK
         return RenderResult(report, outputs, code)
 
-    if plan is not None:
-        _write_rasters(plan)  # before the index, so it never names a file not yet written
+    _write_rasters(plan)  # before the README and index, so neither names a file not yet written
     statuses: list[OutputStatus] = []
     for path, text, current in (
         (readme_path, readme, readme_current),
@@ -842,7 +971,6 @@ def render_dir(
         if not current:
             write_atomic(path, text)
         statuses.append(OutputStatus(path.name, STATE_CURRENT if current else STATE_WRITTEN))
-    if plan is not None:
-        for orphan in plan.orphans:  # last: an interrupted run never strands the index
-            _delete(orphan)
+    for orphan in plan.orphans:  # last: an interrupted run never strands the README or index
+        _delete(orphan)
     return RenderResult(report, (*statuses, *raster_statuses), EXIT_OK)

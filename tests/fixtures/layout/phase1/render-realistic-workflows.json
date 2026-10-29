@@ -1,0 +1,87 @@
+{
+  "schema": "show-your-work.workflows.v1",
+  "generator": "show-your-work 0.1.0",
+  "generated_at": "2026-01-02T03:04:05+00:00",
+  "source_dir": "docs/workflows",
+  "items": [
+    {
+      "id": "bike-repair-triage",
+      "label": "Bike Repair Triage",
+      "summary": "How a repair shop sorts incoming bikes into same-day fixes, booked repairs and referrals.",
+      "alt": "An intake box splits three ways at a diamond: quick fixes go straight to a work stand, bigger jobs go to a booking calendar, and specialist work leaves the shop.",
+      "not_shown": "warranty claims, parts ordering and supplier backorders, loaner bike checkout, e-bike battery diagnostics, wheel truing and spoke replacement, suspension servicing, frame crack inspection, custom builds, payment and deposits, customer pickup reminders, weekly tool calibration routine, shop safety walkthroughs, and the seasonal tune-up promotion that changes intake volume for six weeks every spring",
+      "sources": [
+        "docs/shop/intake.md"
+      ],
+      "source_path": "docs/workflows/bike-repair-triage.mmd",
+      "source_sha256": "118a1431f0c2a7647e297ad4c312aad1738b44cf170abd5ba660b3498c33e031",
+      "engine": "mermaid",
+      "rasters": null
+    },
+    {
+      "id": "garden-watering-crlf",
+      "label": "Garden Watering Schedule",
+      "summary": "When the drip system waters each bed, and how a rain sensor skips a cycle.",
+      "alt": "A timer box feeds a diamond asking whether rain fell; yes skips to the next day, no opens three bed valves one after another.",
+      "not_shown": "winterizing, hand watering with a hose, fertilizer injection",
+      "sources": [
+        "docs/garden/irrigation.md",
+        "docs/garden/sensors.md",
+        "https://example.com/drip-timer-manual"
+      ],
+      "source_path": "docs/workflows/garden-watering-crlf.mmd",
+      "source_sha256": "623066a967ec1fc1c0765ea8f855c063c240d441fc9c1fe8af022172587c50b6",
+      "engine": "mermaid",
+      "rasters": null
+    },
+    {
+      "id": "kitchen-ticket-flow",
+      "label": "Kitchen Orders: From Ticket to Table",
+      "summary": "How a restaurant order moves from the counter through the line to the pass: one ticket per table.",
+      "alt": "Five boxes in a row from counter to table, with a loop from the pass back to the line labelled refire.",
+      "not_shown": "allergy escalations, comped dishes, split checks",
+      "sources": [
+        "docs/kitchen/tickets.md",
+        "docs/kitchen/expo.md"
+      ],
+      "source_path": "docs/workflows/kitchen-ticket-flow.mmd",
+      "source_sha256": "c3f8e8e82896e0d66a6b4bcaa6413c29b6132535efca9f94084829504356b615",
+      "engine": "mermaid",
+      "rasters": null
+    },
+    {
+      "id": "library-loan-lifecycle",
+      "label": "Title: Library Loan Lifecycle",
+      "summary": "A book's path from the shelf to a borrower and back, including holds and overdue notices.",
+      "alt": "A loop of boxes from shelf to checkout to borrower to the return desk and back to the shelf, with a side branch through a hold shelf.",
+      "not_shown": "interlibrary loans, damaged-item fees, staff overrides",
+      "sources": [
+        "docs/library/circulation.md",
+        "docs/library/holds.md - how the hold queue is ordered",
+        "docs/library/overdue.md - when reminder notices go out"
+      ],
+      "source_path": "docs/workflows/library-loan-lifecycle.mmd",
+      "source_sha256": "a7b5c4dafe9d0bdd5f2b626e561d0676e2129dadb791ae6131ae79d0e51bd92a",
+      "engine": "mermaid",
+      "rasters": null
+    },
+    {
+      "id": "recipe-scaling-pipeline",
+      "label": "Recipe Scaling Pipeline",
+      "summary": "Turning a family recipe into a batch plan for a bakery, from unit conversion to the prep list.",
+      "alt": "A top-to-bottom pipeline of five steps grouped in two panels, conversion and planning, ending at a printed prep list.",
+      "not_shown": "costing, allergen labelling, oven scheduling",
+      "sources": [
+        "docs/bakery/recipes.md",
+        "docs/bakery/units.md",
+        "docs/bakery/yield-tables.md",
+        "docs/bakery/prep-list.md",
+        "https://example.com/baker-percentages"
+      ],
+      "source_path": "docs/workflows/recipe-scaling-pipeline.mmd",
+      "source_sha256": "fa8e7a28d4c5fd5ce9944622a7bc6f9fb8c98c95918b64ed7ae765a6dd5b5996",
+      "engine": "mermaid",
+      "rasters": null
+    }
+  ]
+}

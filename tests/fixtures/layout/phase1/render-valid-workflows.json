@@ -1,0 +1,50 @@
+{
+  "schema": "show-your-work.workflows.v1",
+  "generator": "show-your-work 0.1.0",
+  "generated_at": "2026-01-02T03:04:05+00:00",
+  "source_dir": "docs/workflows",
+  "items": [
+    {
+      "id": "feedback",
+      "label": "Playtest Feedback",
+      "summary": "Four stages from idea to playtest, with playtest feeding back to the idea.",
+      "alt": "Four columns left to right; a dashed return runs from the last column back to the first.",
+      "not_shown": "art, audio",
+      "sources": [
+        "docs/playtest.md"
+      ],
+      "source_path": "docs/workflows/feedback.mmd",
+      "source_sha256": "9d43dd9a3704fbe2434baa8901211c2544a438668d71664f7daa3ece3110c088",
+      "engine": "mermaid",
+      "rasters": null
+    },
+    {
+      "id": "flow",
+      "label": "Order Fulfilment",
+      "summary": "An order is planned, built and shipped, with one rework loop.",
+      "alt": "Two columns, plan then build, joined by a spine; a dashed return closes the loop.",
+      "not_shown": "refunds, partial shipments",
+      "sources": [
+        "docs/fulfilment.md"
+      ],
+      "source_path": "docs/workflows/flow.mmd",
+      "source_sha256": "b33c14cb0bff6a506f465e36586fe2c2c8c733a1aa9b4bf51354f7dae0ca90e6",
+      "engine": "mermaid",
+      "rasters": null
+    },
+    {
+      "id": "plain",
+      "label": "Plain Diagram",
+      "summary": "A diagram with no layout sidecar keeps the mermaid path.",
+      "alt": "Two boxes side by side joined by a single arrow.",
+      "not_shown": "everything else",
+      "sources": [
+        "docs/plain.md"
+      ],
+      "source_path": "docs/workflows/plain.mmd",
+      "source_sha256": "436f77c0b45c750951146b5779d2da8bf370dd22e8d86390841c4347f87299c1",
+      "engine": "mermaid",
+      "rasters": null
+    }
+  ]
+}
