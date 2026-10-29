@@ -1,10 +1,13 @@
-"""A stand-in renderer for tests: mermaidx is an optional extra the default gate never installs."""
+"""Shared test support: a stand-in renderer (mermaidx is an optional extra the default gate never
+installs) and the ``check --json`` document readers."""
 
 from __future__ import annotations
 
+import json
 import struct
 import zlib
 from collections.abc import Mapping
+from typing import Any
 
 from show_your_work.constants import COMMENT_PREFIX, GARBAGE
 
@@ -122,3 +125,19 @@ class FakeRenderer:
             raise RuntimeError(f"raster failed for {title}")
         width, height = FAKE_PNG_SIZE
         return solid_png(int(width * scale), int(height * scale), background)
+
+
+def json_document(out: str) -> dict[str, Any]:
+    """The ``check --json`` document printed as ``out`` (a captured stdout)."""
+    document: dict[str, Any] = json.loads(out)
+    return document
+
+
+def rows_by_file(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The ``files`` rows of a ``check --json`` document, keyed by file name."""
+    return {row["file"]: row for row in document["files"]}
+
+
+def finding_codes(row: dict[str, Any]) -> list[str]:
+    """The finding codes of one ``check --json`` row, in report order."""
+    return [f["code"] for f in row["findings"]]

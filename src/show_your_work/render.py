@@ -33,6 +33,9 @@ preserved-or-null rule on the next plain ``render``. Every canvas is checked aga
 caps (``MAX_RASTER_SIDE`` / ``MAX_RASTER_PIXELS``) before it is rasterized; over the cap is exit
 2 with nothing written. ``check_only`` with a rasterizer writes and deletes nothing and compares
 rasters unmasked, reporting each raster that would change.
+
+``sha256_lf`` is a deliberate re-export of :func:`show_your_work.header.sha256_lf` (the one source
+of truth), kept because render owned it in Phase 1 (plan section 2.2).
 """
 
 from __future__ import annotations
@@ -118,7 +121,13 @@ from show_your_work.constants import (
     STATE_STALE,
     STATE_WRITTEN,
 )
-from show_your_work.header import Header, HeaderError, check_header, normalize_newlines
+from show_your_work.header import (
+    Header,
+    HeaderError,
+    check_header,
+    normalize_newlines,
+    sha256_lf,
+)
 from show_your_work.renderer import RasterRenderer
 
 __all__ = [
@@ -133,6 +142,7 @@ __all__ = [
     "raster_path",
     "render_dir",
     "serialize_index",
+    "sha256_lf",
     "source_dir_of",
     "write_atomic",
 ]
@@ -214,11 +224,6 @@ def _source_path(source_dir: str, diagram_id: str) -> str:
 # --- reading -------------------------------------------------------------------------------
 
 
-def _sha256_lf(raw: bytes) -> str:
-    """SHA-256 over the bytes after CRLF -> LF normalization (section 3.4)."""
-    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
-
-
 def _load_diagrams(target: Path) -> list[Diagram]:
     """Re-read every source after ``check`` passed; a file that no longer parses is exit 2."""
     sources, drawings = discover(target)
@@ -232,7 +237,7 @@ def _load_diagrams(target: Path) -> list[Diagram]:
             raise GateError(MSG_SOURCE_CHANGED.format(path=path.as_posix()))
         diagram_id = path.name[: -len(SOURCE_SUFFIX)]
         engine = ENGINE_EXCALIDRAW if diagram_id in drawn else ENGINE_MERMAID
-        diagrams.append(Diagram(diagram_id, header, text, _sha256_lf(raw), engine))
+        diagrams.append(Diagram(diagram_id, header, text, sha256_lf(raw), engine))
     diagrams.sort(key=lambda d: d.id)
     return diagrams
 

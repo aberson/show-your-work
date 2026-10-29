@@ -101,6 +101,9 @@ MAX_ASCII: Final = 127
 #: Code points below this are C0 control characters (``MAX_ASCII``, DEL, is one too).
 MIN_PRINTABLE: Final = 0x20
 
+#: Highest printable code point (``MIN_PRINTABLE`` is the lowest; ``MAX_ASCII``, DEL, is not one).
+MAX_PRINTABLE: Final = MAX_ASCII - 1
+
 # ---------------------------------------------------------------------------
 # Diagram identity (section 3.2)
 # ---------------------------------------------------------------------------
@@ -195,6 +198,8 @@ RENDERER_MODULE: Final = "mermaidx"
 #: Largest ``.mmd`` file ``check`` will read; a larger one makes the gate exit 2 (section 4: the
 #: gate cannot run safely on it) rather than reading an unbounded attacker-sized file.
 MAX_SOURCE_BYTES: Final = 256 * 1024
+#: Largest layout sidecar ``check`` will read; a larger one is a gate error (exit 2, section 2.4).
+MAX_LAYOUT_BYTES: Final = 64 * 1024
 
 #: Known-good render anchor: rendering this MUST succeed and yield at least one node, so a
 #: renderer that raises on everything cannot pass the garbage anchor (good + garbage calibration).
@@ -303,7 +308,10 @@ RASTER_THEMES: Final[tuple[str, ...]] = tuple([RASTER_LIGHT, RASTER_DARK])
 RASTER_FILE: Final = "{id}-{theme}.png"
 #: The exact key set of one ``rasters.<theme>`` entry, in order (section 3.4).
 RASTER_ENTRY_KEYS: Final[tuple[str, ...]] = tuple(["path", "sha256", "width", "height", "bytes"])
-SHA256_HEX_RE: Final = re.compile(r"^[0-9a-f]{64}$")
+#: A SHA-256 hex digest is exactly this many lowercase hex characters (``SHA256_HEX_RE``).
+SHA256_HEX_CHARS: Final = 64
+#: The one regex built from a constant, so the hex length has one source (``SHA256_HEX_CHARS``).
+SHA256_HEX_RE: Final = re.compile(rf"^[0-9a-f]{{{SHA256_HEX_CHARS}}}$")
 
 # ---------------------------------------------------------------------------
 # Frozen raster parameters for ``render --png`` (section 4 "PNG rendering", DD5). An unpinned
@@ -469,6 +477,101 @@ MSG_SYMLINK_SOURCE: Final = "refusing to read symlinked source {path}"
 MSG_SOURCE_TOO_LARGE: Final = (
     f"source {{path}} is larger than {MAX_SOURCE_BYTES} bytes; refusing to read it"
 )
+#: Exit 2 for a sidecar over ``MAX_LAYOUT_BYTES`` (the message also names the limit in KiB).
+MSG_LAYOUT_TOO_LARGE: Final = (
+    f"layout sidecar {{path}} is larger than {MAX_LAYOUT_BYTES} bytes "
+    f"({MAX_LAYOUT_BYTES // 1024} KiB); refusing to read it"
+)
+#: Exit 2 for a symlinked sidecar: ``check`` never follows a link out of TARGET.
+MSG_SYMLINK_LAYOUT: Final = "refusing to read symlinked layout sidecar {path}"
+#: The hint closing every orphan finding (an ``.excalidraw`` drawing or a layout sidecar).
+MSG_ORPHAN_HINT: Final = "author in mermaid first"
+
+# ---------------------------------------------------------------------------
+# Layout sidecar contract (Phase 2 section 2.4)
+# ---------------------------------------------------------------------------
+
+#: A diagram opts into the house layout with ``<id>.layout.json`` directly beside ``<id>.mmd``.
+LAYOUT_SUFFIX: Final = ".layout.json"
+#: The exact ``schema`` value of a sidecar.
+LAYOUT_SCHEMA: Final = "show-your-work.layout.v1"
+
+#: Sidecar field names (section 2.4), each defined once.
+LAYOUT_SCHEMA_KEY: Final = "schema"
+LAYOUT_SHA_KEY: Final = "source_sha256"
+LAYOUT_ALT_KEY: Final = "alt"
+LAYOUT_LANES_KEY: Final = "lanes"
+LAYOUT_LOOPS_KEY: Final = "loops"
+LAYOUT_REJOIN_KEY: Final = "rejoin"
+LANE_LABEL_KEY: Final = "label"
+LANE_IN_KEY: Final = "in"
+LANE_OUT_KEY: Final = "out"
+LANE_NODES_KEY: Final = "nodes"
+NODE_NAME_KEY: Final = "name"
+NODE_SUB_KEY: Final = "sub"
+NODE_SIDE_KEY: Final = "side"
+NODE_BRANCH_LABEL_KEY: Final = "branch_label"
+LOOP_LANE_KEY: Final = "lane"
+LOOP_FROM_KEY: Final = "from"
+LOOP_TO_KEY: Final = "to"
+REJOIN_FROM_LANE_KEY: Final = "from_lane"
+REJOIN_FROM_NODE_KEY: Final = "from_node"
+REJOIN_TO_LANE_KEY: Final = "to_lane"
+REJOIN_TO_NODE_KEY: Final = "to_node"
+REJOIN_LABEL_KEY: Final = "label"
+
+#: The EXACT key set of each sidecar object (unknown or missing keys are ``layout-invalid``).
+LAYOUT_KEYS: Final[tuple[str, ...]] = tuple(
+    [
+        LAYOUT_SCHEMA_KEY,
+        LAYOUT_SHA_KEY,
+        LAYOUT_ALT_KEY,
+        LAYOUT_LANES_KEY,
+        LAYOUT_LOOPS_KEY,
+        LAYOUT_REJOIN_KEY,
+    ]
+)
+LANE_KEYS: Final[tuple[str, ...]] = tuple(
+    [LANE_LABEL_KEY, LANE_IN_KEY, LANE_OUT_KEY, LANE_NODES_KEY]
+)
+NODE_KEYS: Final[tuple[str, ...]] = tuple(
+    [NODE_NAME_KEY, NODE_SUB_KEY, NODE_SIDE_KEY, NODE_BRANCH_LABEL_KEY]
+)
+LOOP_KEYS: Final[tuple[str, ...]] = tuple([LOOP_LANE_KEY, LOOP_FROM_KEY, LOOP_TO_KEY])
+REJOIN_KEYS: Final[tuple[str, ...]] = tuple(
+    [
+        REJOIN_FROM_LANE_KEY,
+        REJOIN_FROM_NODE_KEY,
+        REJOIN_TO_LANE_KEY,
+        REJOIN_TO_NODE_KEY,
+        REJOIN_LABEL_KEY,
+    ]
+)
+
+#: Bounds (section 2.4, including its text-fit limits). ``alt`` reuses ``MAX_ALT``.
+MIN_LAYOUT_LANES: Final = 2
+MAX_LAYOUT_LANES: Final = 6
+MIN_LANE_NODES: Final = 1
+MAX_LANE_NODES: Final = 4
+MAX_LANE_LABEL: Final = 16
+MAX_NODE_NAME: Final = 22
+MAX_NODE_SUB: Final = 27
+MAX_BRANCH_LABEL: Final = 14
+MAX_REJOIN_LABEL: Final = 40
+#: At most this many loops per lane.
+MAX_LOOPS_PER_LANE: Final = 1
+#: A lane label: uppercase letters, digits, space, ``+``, ``-``, ``/`` (length checked apart).
+LANE_LABEL_RE: Final = re.compile(r"^[A-Z0-9 +/-]*$")
+#: The human-readable wording of the characters ``LANE_LABEL_RE`` allows, used in the
+#: ``layout-bound`` message. It must describe ``LANE_LABEL_RE`` exactly: change both together
+#: (a test checks that they agree).
+LANE_LABEL_CHARS_TEXT: Final = "uppercase letters, digits, space, '+', '-', '/'"
+#: A ``layout-invalid`` detail (parser error text, unknown key list) keeps at most this many
+#: characters (plus ``...``), so a hostile sidecar cannot flood the report.
+MAX_LAYOUT_DETAIL: Final = 200
+#: A sidecar integer token (an index) has at most this many digits; a longer one is
+#: ``layout-invalid`` before it is ever converted, whatever the interpreter's int-string limit.
+MAX_LAYOUT_INT_DIGITS: Final = 6
 
 # ---------------------------------------------------------------------------
 # Finding codes (section 4) -- stable strings, defined once
@@ -496,6 +599,11 @@ CODE_BUDGET_EDGE_LABEL: Final = "budget-edge-label"
 CODE_BUDGET_SUBGRAPHS: Final = "budget-subgraphs"
 CODE_SUBGRAPH_UNBALANCED: Final = "subgraph-unbalanced"
 CODE_RENDER_ERROR: Final = "render-error"
+#: Layout sidecar codes (section 2.4): only ``layout-orphan`` is a row of its own.
+CODE_LAYOUT_INVALID: Final = "layout-invalid"
+CODE_LAYOUT_BOUND: Final = "layout-bound"
+CODE_LAYOUT_STALE: Final = "layout-stale"
+CODE_LAYOUT_ORPHAN: Final = "layout-orphan"
 
 #: Required field -> the finding code emitted when it is absent or empty.
 MISSING_FIELD_CODES: Final[Mapping[str, str]] = MappingProxyType(
@@ -533,5 +641,9 @@ FINDING_CODES: Final[tuple[str, ...]] = tuple(
         CODE_BUDGET_SUBGRAPHS,
         CODE_SUBGRAPH_UNBALANCED,
         CODE_RENDER_ERROR,
+        CODE_LAYOUT_INVALID,
+        CODE_LAYOUT_BOUND,
+        CODE_LAYOUT_STALE,
+        CODE_LAYOUT_ORPHAN,
     ]
 )

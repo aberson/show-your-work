@@ -1,0 +1,30 @@
+exit 1
+--- stdout
+FILE                         NODES  EDGES  RESULT
+bike-repair-triage.mmd           2      1  pass
+edge-label-41.mmd                2      1  FAIL
+    budget-edge-label: longest edge label is 41 chars (max 40)
+edges-21.mmd                     7     21  FAIL
+    budget-edges: 21 edges (max 20)
+garden-watering-crlf.mmd         2      1  pass
+ghost.excalidraw.svg             -      -  FAIL
+    excalidraw-orphan: 'ghost.excalidraw.svg' has no sibling 'ghost.mmd'; author in mermaid first
+kitchen-ticket-flow.mmd          2      1  pass
+library-loan-lifecycle.mmd       2      1  pass
+minimal.mmd                      2      1  pass
+missing-alt.mmd                  2      1  FAIL
+    header-missing-alt: header field 'alt' missing
+node-label-61.mmd                2      1  FAIL
+    budget-node-label: longest node label is 61 chars (max 60)
+nodes-15.mmd                    15     14  FAIL
+    budget-nodes: 15 nodes (max 14)
+non-ascii.mmd                    2      1  FAIL
+    non-ascii: file is not ASCII (first non-ASCII byte on line 2)
+    non-ascii: header field 'summary' is not ASCII
+recipe-scaling-pipeline.mmd      2      1  pass
+subgraphs-3.mmd                  2      1  FAIL
+    budget-subgraphs: 3 subgraphs (max 2)
+unbalanced-end.mmd               2      1  FAIL
+    subgraph-unbalanced: 2 'subgraph' lines but 1 'end' lines
+6/15 pass (budget: <=14 nodes, <=20 edges, node label <=60, edge label <=40, <=2 subgraphs)
+--- stderr

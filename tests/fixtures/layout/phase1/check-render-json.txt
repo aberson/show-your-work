@@ -1,0 +1,193 @@
+exit 1
+--- stdout
+{
+  "schema": "show-your-work.report.v1",
+  "target": "<TARGET>",
+  "verb": "check",
+  "files": [
+    {
+      "file": "bike-repair-triage.mmd",
+      "id": "bike-repair-triage",
+      "pass": true,
+      "nodes": 2,
+      "edges": 1,
+      "findings": []
+    },
+    {
+      "file": "edge-label-41.mmd",
+      "id": "edge-label-41",
+      "pass": false,
+      "nodes": 2,
+      "edges": 1,
+      "findings": [
+        {
+          "code": "budget-edge-label",
+          "message": "longest edge label is 41 chars (max 40)"
+        }
+      ]
+    },
+    {
+      "file": "edges-21.mmd",
+      "id": "edges-21",
+      "pass": false,
+      "nodes": 7,
+      "edges": 21,
+      "findings": [
+        {
+          "code": "budget-edges",
+          "message": "21 edges (max 20)"
+        }
+      ]
+    },
+    {
+      "file": "garden-watering-crlf.mmd",
+      "id": "garden-watering-crlf",
+      "pass": true,
+      "nodes": 2,
+      "edges": 1,
+      "findings": []
+    },
+    {
+      "file": "ghost.excalidraw.svg",
+      "id": "ghost",
+      "pass": false,
+      "nodes": null,
+      "edges": null,
+      "findings": [
+        {
+          "code": "excalidraw-orphan",
+          "message": "'ghost.excalidraw.svg' has no sibling 'ghost.mmd'; author in mermaid first"
+        }
+      ]
+    },
+    {
+      "file": "kitchen-ticket-flow.mmd",
+      "id": "kitchen-ticket-flow",
+      "pass": true,
+      "nodes": 2,
+      "edges": 1,
+      "findings": []
+    },
+    {
+      "file": "library-loan-lifecycle.mmd",
+      "id": "library-loan-lifecycle",
+      "pass": true,
+      "nodes": 2,
+      "edges": 1,
+      "findings": []
+    },
+    {
+      "file": "minimal.mmd",
+      "id": "minimal",
+      "pass": true,
+      "nodes": 2,
+      "edges": 1,
+      "findings": []
+    },
+    {
+      "file": "missing-alt.mmd",
+      "id": "missing-alt",
+      "pass": false,
+      "nodes": 2,
+      "edges": 1,
+      "findings": [
+        {
+          "code": "header-missing-alt",
+          "message": "header field 'alt' missing"
+        }
+      ]
+    },
+    {
+      "file": "node-label-61.mmd",
+      "id": "node-label-61",
+      "pass": false,
+      "nodes": 2,
+      "edges": 1,
+      "findings": [
+        {
+          "code": "budget-node-label",
+          "message": "longest node label is 61 chars (max 60)"
+        }
+      ]
+    },
+    {
+      "file": "nodes-15.mmd",
+      "id": "nodes-15",
+      "pass": false,
+      "nodes": 15,
+      "edges": 14,
+      "findings": [
+        {
+          "code": "budget-nodes",
+          "message": "15 nodes (max 14)"
+        }
+      ]
+    },
+    {
+      "file": "non-ascii.mmd",
+      "id": "non-ascii",
+      "pass": false,
+      "nodes": 2,
+      "edges": 1,
+      "findings": [
+        {
+          "code": "non-ascii",
+          "message": "file is not ASCII (first non-ASCII byte on line 2)"
+        },
+        {
+          "code": "non-ascii",
+          "message": "header field 'summary' is not ASCII"
+        }
+      ]
+    },
+    {
+      "file": "recipe-scaling-pipeline.mmd",
+      "id": "recipe-scaling-pipeline",
+      "pass": true,
+      "nodes": 2,
+      "edges": 1,
+      "findings": []
+    },
+    {
+      "file": "subgraphs-3.mmd",
+      "id": "subgraphs-3",
+      "pass": false,
+      "nodes": 2,
+      "edges": 1,
+      "findings": [
+        {
+          "code": "budget-subgraphs",
+          "message": "3 subgraphs (max 2)"
+        }
+      ]
+    },
+    {
+      "file": "unbalanced-end.mmd",
+      "id": "unbalanced-end",
+      "pass": false,
+      "nodes": 2,
+      "edges": 1,
+      "findings": [
+        {
+          "code": "subgraph-unbalanced",
+          "message": "2 'subgraph' lines but 1 'end' lines"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total": 15,
+    "passed": 6,
+    "failed": 9,
+    "rendered": true,
+    "budget": {
+      "nodes": 14,
+      "edges": 20,
+      "node_label": 60,
+      "edge_label": 40,
+      "subgraphs": 2
+    }
+  },
+  "exit_code": 1
+}
+--- stderr

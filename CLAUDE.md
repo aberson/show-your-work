@@ -37,13 +37,14 @@ Shell: PowerShell (primary) on Windows; commands are shell-agnostic via uv.
 - `src/show_your_work/constants.py` — the ONE home for budget numbers, header bounds, id regex, schema strings, raster constants, garbage fixture
 - `src/show_your_work/header.py` — the single header parser (title, Summary, Sources, Not shown, Alt)
 - `src/show_your_work/checks.py` — `check` logic and findings
+- `src/show_your_work/layout.py` — layout sidecar (`<id>.layout.json`) parse and validation
 - `src/show_your_work/renderer.py` — optional mermaidx wrapper, garbage anchor, SVG counts, PNG
 - `src/show_your_work/render.py` — README + `workflows.json` builders, `--check`, rasters
 - `src/show_your_work/scaffold.py` — `init`
 - `src/show_your_work/cli.py` — argparse, exit codes, `--json`
 - `templates/workflows/` — `intro.md`, `example-workflow.mmd` copied by `init`
-- `tests/` — `test_header`, `test_checks`, `test_render`, `test_scaffold`, `test_cli`, `test_png` (renderer; skips without the `render` extra), `test_realistic_fixture`, `test_live_coding_root` (read-only tmp copy; skips when absent), `test_regex_linear`; `fakes.py` test doubles
-- `tests/fixtures/` — `garbage/`, `bad-headers/`, `over-budget/`, `good/`, `realistic/` (synthetic; the real coding-root diagrams are private and never committed)
+- `tests/` — `test_header`, `test_checks`, `test_render`, `test_scaffold`, `test_cli`, `test_png` (renderer; skips without the `render` extra), `test_realistic_fixture`, `test_live_coding_root` (read-only tmp copy; skips when absent), `test_regex_linear`, `test_layout`; `fakes.py` test doubles
+- `tests/fixtures/` — `garbage/`, `bad-headers/`, `over-budget/`, `good/`, `realistic/`, `layout/` (sidecar cases, `phase1/` goldens); all synthetic (the real coding-root diagrams are private and never committed)
 - `docs/workflows/` — this repo's own dogfooded folder
 - `docs/migration-coding-root.md` — M1 procedure; `docs/observatory-amendment.md` — M2 issue body
 - `README.md` + `utility-project.toml` — utility-project-standard conformance (`standalone-cli` / `public` / `experimental`)

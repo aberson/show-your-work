@@ -5,6 +5,10 @@
 
 * id grammar on the file stem (rejected, never sanitized) and case-folded duplicate ids;
 * an ``<id>.excalidraw.svg`` without a sibling ``<id>.mmd`` is an ``excalidraw-orphan`` row;
+* a layout sidecar ``<id>.layout.json`` (Phase 2 section 2.4) is validated by
+  :func:`show_your_work.layout.layout_findings`; ``layout-invalid`` / ``layout-bound`` /
+  ``layout-stale`` attach to the ``<id>.mmd`` row and a sidecar without a sibling ``<id>.mmd`` is
+  its own ``layout-orphan`` row. A folder without sidecars reports exactly as in Phase 1;
 * the header contract via the single parser (:func:`show_your_work.header.check_header`);
 * whole-file ASCII and no machine-absolute ``Users`` path;
 * the legibility budget measurable from source: longest node / edge label, subgraph count and
@@ -14,7 +18,8 @@
 
 Conditions under which the gate cannot run at all raise :class:`GateError` (exit 2): a missing
 or unlistable TARGET, no ``*.mmd``, a broken anchor, and -- because ``check`` must stay safe on
-hostile input -- an unreadable source, a symlinked ``*.mmd`` or one over ``MAX_SOURCE_BYTES``.
+hostile input -- an unreadable source, a symlinked ``*.mmd`` or one over ``MAX_SOURCE_BYTES``, and a
+symlinked sidecar or one over ``MAX_LAYOUT_BYTES`` (section 2.4).
 The label regexes are linear-time (see :mod:`show_your_work.constants`).
 """
 
@@ -36,6 +41,7 @@ from show_your_work.constants import (
     CODE_EXCALIDRAW_ORPHAN,
     CODE_ID_DUPLICATE,
     CODE_ID_GRAMMAR,
+    CODE_LAYOUT_ORPHAN,
     CODE_NON_ASCII,
     CODE_RENDER_ERROR,
     CODE_SUBGRAPH_UNBALANCED,
@@ -46,8 +52,10 @@ from show_your_work.constants import (
     EXIT_OK,
     ID_RE,
     LABEL_STRIP_CHARS,
+    LAYOUT_SUFFIX,
     MAX_EDGE_LABEL,
     MAX_EDGES,
+    MAX_LAYOUT_BYTES,
     MAX_NODE_LABEL,
     MAX_NODES,
     MAX_RENDER_ERROR_DETAIL,
@@ -55,8 +63,11 @@ from show_your_work.constants import (
     MAX_SUBGRAPHS,
     MSG_ANCHOR_BROKEN,
     MSG_CANNOT_READ,
+    MSG_LAYOUT_TOO_LARGE,
     MSG_NO_SOURCES,
+    MSG_ORPHAN_HINT,
     MSG_SOURCE_TOO_LARGE,
+    MSG_SYMLINK_LAYOUT,
     MSG_SYMLINK_SOURCE,
     MSG_TARGET_NOT_DIR,
     NODE_LABEL_RES,
@@ -65,7 +76,8 @@ from show_your_work.constants import (
     SUBGRAPH_RE,
     USERS_PATH_RE,
 )
-from show_your_work.header import HeaderError, check_header, normalize_newlines
+from show_your_work.header import HeaderError, check_header, clip_detail, normalize_newlines
+from show_your_work.layout import layout_findings
 from show_your_work.renderer import Renderer
 
 __all__ = [
@@ -76,7 +88,9 @@ __all__ = [
     "check_dir",
     "check_source",
     "discover",
+    "discover_layouts",
     "error_detail",
+    "read_layout",
     "read_source",
 ]
 
@@ -143,16 +157,30 @@ def _cannot_read(path: Path, exc: OSError) -> GateError:
     return GateError(MSG_CANNOT_READ.format(path=path.as_posix(), reason=reason))
 
 
-def read_source(path: Path) -> bytes:
-    """Read one source, at most ``MAX_SOURCE_BYTES``; any I/O failure or oversize is exit 2."""
+def read_source(
+    path: Path, *, limit: int = MAX_SOURCE_BYTES, too_large_msg: str = MSG_SOURCE_TOO_LARGE
+) -> bytes:
+    """Read one file, at most ``limit`` bytes; any I/O failure or oversize is exit 2.
+
+    ``too_large_msg`` is the ``{path}`` message template raised when the file exceeds ``limit``.
+    """
     try:
         with path.open("rb") as handle:
-            raw = handle.read(MAX_SOURCE_BYTES + 1)
+            raw = handle.read(limit + 1)
     except OSError as exc:
         raise _cannot_read(path, exc) from exc
-    if len(raw) > MAX_SOURCE_BYTES:
-        raise GateError(MSG_SOURCE_TOO_LARGE.format(path=path.as_posix()))
+    if len(raw) > limit:
+        raise GateError(too_large_msg.format(path=path.as_posix()))
     return raw
+
+
+def read_layout(path: Path) -> bytes:
+    """The layout sidecar read API: ``read_source`` with the layout limit and too-large message.
+
+    At most ``MAX_LAYOUT_BYTES`` (64 KiB) are read; a larger sidecar raises :class:`GateError`
+    (exit 2) with ``MSG_LAYOUT_TOO_LARGE``, which names that limit.
+    """
+    return read_source(path, limit=MAX_LAYOUT_BYTES, too_large_msg=MSG_LAYOUT_TOO_LARGE)
 
 
 def discover(target: Path) -> tuple[list[Path], list[Path]]:
@@ -177,6 +205,26 @@ def discover(target: Path) -> tuple[list[Path], list[Path]]:
     except OSError as exc:
         raise _cannot_read(target, exc) from exc
     return sources, drawings
+
+
+def discover_layouts(target: Path) -> list[Path]:
+    """Return the layout sidecars (regular ``*.layout.json`` files) directly inside ``target``.
+
+    A symlinked sidecar raises :class:`GateError` (never followed out of TARGET), as does a
+    listing failure. Nested folders (``rasters/``) are never scanned.
+    """
+    layouts: list[Path] = []
+    try:
+        for entry in sorted(target.iterdir(), key=lambda p: p.name):
+            if not entry.name.endswith(LAYOUT_SUFFIX):
+                continue
+            if entry.is_symlink():
+                raise GateError(MSG_SYMLINK_LAYOUT.format(path=entry.as_posix()))
+            if entry.is_file():
+                layouts.append(entry)
+    except OSError as exc:
+        raise _cannot_read(target, exc) from exc
+    return layouts
 
 
 def _stem(name: str, suffix: str) -> str:
@@ -272,10 +320,7 @@ def _source_findings(name: str, raw: bytes) -> list[Finding]:
 def error_detail(exc: BaseException) -> str:
     """A renderer error as one whitespace-collapsed line of at most ``MAX_RENDER_ERROR_DETAIL``
     characters (plus ``...``); the exception type name when the message is empty."""
-    detail = " ".join(str(exc).split()) or type(exc).__name__
-    if len(detail) > MAX_RENDER_ERROR_DETAIL:
-        detail = detail[:MAX_RENDER_ERROR_DETAIL] + "..."
-    return detail
+    return clip_detail(str(exc), MAX_RENDER_ERROR_DETAIL, type(exc).__name__)
 
 
 def _render_findings(
@@ -336,21 +381,41 @@ def _duplicate_findings(sources: Sequence[Path]) -> dict[str, list[Finding]]:
     return out
 
 
-def _orphan_results(sources: Sequence[Path], drawings: Sequence[Path]) -> list[FileResult]:
+def _orphan_results(
+    sources: Sequence[Path], companions: Sequence[Path], suffix: str, code: str, hint: str
+) -> list[FileResult]:
+    """Each ``<id><suffix>`` companion without a sibling ``<id>.mmd`` is its own ``code`` row."""
     source_names = {p.name for p in sources}
     results: list[FileResult] = []
-    for path in drawings:
-        diagram_id = _stem(path.name, EXCALIDRAW_SUFFIX)
+    for path in companions:
+        diagram_id = _stem(path.name, suffix)
         sibling = diagram_id + SOURCE_SUFFIX
         if sibling in source_names:
             continue
-        finding = Finding(
-            path.name,
-            CODE_EXCALIDRAW_ORPHAN,
-            f"{path.name!r} has no sibling {sibling!r}; author in mermaid first",
-        )
+        finding = Finding(path.name, code, f"{path.name!r} has no sibling {sibling!r}; {hint}")
         results.append(FileResult(path.name, diagram_id, None, None, (finding,)))
     return results
+
+
+def _with_layout(
+    result: FileResult,
+    sidecar: Path | None,
+    source_raw: bytes,
+    drawings: Sequence[Path],
+) -> FileResult:
+    """``result`` plus the findings of its sidecar (if any); a no-op without one."""
+    if sidecar is None:
+        return result
+    raw = read_layout(sidecar)
+    drawing = result.id + EXCALIDRAW_SUFFIX
+    beside = any(d.name == drawing for d in drawings)
+    sidecar_findings = layout_findings(result.id, raw, source_raw, beside_drawing=beside)
+    if not sidecar_findings:
+        return result
+    extra = tuple(Finding(result.file, f.code, f.message) for f in sidecar_findings)
+    return FileResult(
+        result.file, result.id, result.nodes, result.edges, (*result.findings, *extra)
+    )
 
 
 def check_dir(target: Path, *, renderer: Renderer | None = None) -> Report:
@@ -358,7 +423,7 @@ def check_dir(target: Path, *, renderer: Renderer | None = None) -> Report:
 
     With ``renderer``, the render anchors (garbage must raise, known-good must render) run
     **before** any file is listed or read; a failing anchor aborts the whole run. Unreadable,
-    symlinked or oversized sources abort it too (exit 2: the gate cannot run safely).
+    symlinked or oversized sources and sidecars abort it too (exit 2: the gate cannot run safely).
     """
     if renderer is not None and not renderer_mod.anchor_ok(renderer):
         raise GateError(MSG_ANCHOR_BROKEN)
@@ -367,17 +432,32 @@ def check_dir(target: Path, *, renderer: Renderer | None = None) -> Report:
     sources, drawings = discover(target)
     if not sources:
         raise GateError(MSG_NO_SOURCES.format(path=target.as_posix()))
+    layouts = discover_layouts(target)
+    sidecars = {_stem(p.name, LAYOUT_SUFFIX) + SOURCE_SUFFIX: p for p in layouts}
 
     duplicates = _duplicate_findings(sources)
     results: list[FileResult] = []
     for path in sources:
-        result = check_source(path.name, read_source(path), renderer=renderer)
+        raw = read_source(path)
+        result = check_source(path.name, raw, renderer=renderer)
         extra = duplicates.get(path.name)
         if extra:
             result = FileResult(
                 result.file, result.id, result.nodes, result.edges, (*extra, *result.findings)
             )
-        results.append(result)
-    results.extend(_orphan_results(sources, drawings))
+        results.append(_with_layout(result, sidecars.get(path.name), raw, drawings))
+    results.extend(
+        _orphan_results(
+            sources, drawings, EXCALIDRAW_SUFFIX, CODE_EXCALIDRAW_ORPHAN, MSG_ORPHAN_HINT
+        )
+    )
+    layout_orphans = _orphan_results(
+        sources, layouts, LAYOUT_SUFFIX, CODE_LAYOUT_ORPHAN, MSG_ORPHAN_HINT
+    )
+    # Exit-2 size gate for orphan sidecars: an orphan is never validated, but an oversized or
+    # unreadable one is still a gate error, like any sidecar. The bytes are not needed.
+    for orphan in layout_orphans:
+        read_layout(target / orphan.file)
+    results.extend(layout_orphans)
     results.sort(key=lambda r: r.file)
     return Report(target, tuple(results), rendered=renderer is not None)

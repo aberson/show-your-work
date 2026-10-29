@@ -1,0 +1,13 @@
+%% Order Fulfilment
+%% Summary: An order is planned, built and shipped, with one rework loop.
+%% Sources:
+%%   - docs/fulfilment.md
+%% Not shown: refunds, partial shipments
+%% Alt: Two columns, plan then build, joined by a spine; a dashed return closes the loop.
+
+flowchart LR
+    A[Take order] --> B[Check stock]
+    B --> C[Pick items]
+    C --> D[Pack box]
+    D --> E[Ship]
+    B -->|short| F[Backorder]

@@ -1,0 +1,29 @@
+exit 1
+--- stdout
+FILE                         NODES  EDGES  RESULT
+bike-repair-triage.mmd           -      -  pass
+edge-label-41.mmd                -      -  FAIL
+    budget-edge-label: longest edge label is 41 chars (max 40)
+edges-21.mmd                     -      -  pass
+garden-watering-crlf.mmd         -      -  pass
+ghost.excalidraw.svg             -      -  FAIL
+    excalidraw-orphan: 'ghost.excalidraw.svg' has no sibling 'ghost.mmd'; author in mermaid first
+kitchen-ticket-flow.mmd          -      -  pass
+library-loan-lifecycle.mmd       -      -  pass
+minimal.mmd                      -      -  pass
+missing-alt.mmd                  -      -  FAIL
+    header-missing-alt: header field 'alt' missing
+node-label-61.mmd                -      -  FAIL
+    budget-node-label: longest node label is 61 chars (max 60)
+nodes-15.mmd                     -      -  pass
+non-ascii.mmd                    -      -  FAIL
+    non-ascii: file is not ASCII (first non-ASCII byte on line 2)
+    non-ascii: header field 'summary' is not ASCII
+recipe-scaling-pipeline.mmd      -      -  pass
+subgraphs-3.mmd                  -      -  FAIL
+    budget-subgraphs: 3 subgraphs (max 2)
+unbalanced-end.mmd               -      -  FAIL
+    subgraph-unbalanced: 2 'subgraph' lines but 1 'end' lines
+NOTE: node/edge counts are exact only under --render (mermaidx); without it they show '-' and the node/edge budget is not checked
+8/15 pass (budget: <=14 nodes, <=20 edges, node label <=60, edge label <=40, <=2 subgraphs)
+--- stderr

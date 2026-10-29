@@ -9,6 +9,9 @@ tests/fixtures/good/*.md text eol=lf
 tests/fixtures/realistic/*.mmd text eol=lf
 tests/fixtures/realistic/*.md text eol=lf
 tests/fixtures/realistic/*-crlf.mmd -text
+# Layout sidecar fixtures and the Phase 1 report goldens (Phase 2 Step 8) are byte-exact LF inputs;
+# a CRLF variant is generated in a tmp copy inside the test, never committed.
+tests/fixtures/layout/** text eol=lf
 # init templates and this repo's dogfooded docs/workflows are copied / compared byte-for-byte.
 templates/workflows/* text eol=lf
 docs/workflows/*.mmd text eol=lf

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import builtins
 import io
-import json
 import os
 import shutil
 import subprocess
@@ -50,7 +49,13 @@ from show_your_work.constants import (
     MSG_RENDERER_MISSING,
     REPORT_SCHEMA,
 )
-from tests.fakes import OVER_COUNTS, FakeRenderer
+from tests.fakes import (
+    OVER_COUNTS,
+    FakeRenderer,
+    finding_codes,
+    json_document,
+    rows_by_file,
+)
 
 
 @pytest.mark.parametrize(
@@ -117,16 +122,7 @@ SOURCE_BUDGET_CODES = {
 
 def _json(capsys: pytest.CaptureFixture[str]) -> tuple[dict[str, Any], str]:
     captured = capsys.readouterr()
-    document: dict[str, Any] = json.loads(captured.out)
-    return document, captured.err
-
-
-def _rows(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {row["file"]: row for row in document["files"]}
-
-
-def _codes(row: dict[str, Any]) -> list[str]:
-    return [f["code"] for f in row["findings"]]
+    return json_document(captured.out), captured.err
 
 
 def _use_renderer(monkeypatch: pytest.MonkeyPatch, fake: FakeRenderer | None) -> None:
@@ -158,7 +154,7 @@ def test_check_over_budget_json_names_every_source_budget_code(
     assert document["target"] == OVER.resolve().as_posix()
     codes = {f["code"] for row in document["files"] for f in row["findings"]}
     assert codes == SOURCE_BUDGET_CODES
-    rows = _rows(document)
+    rows = rows_by_file(document)
     assert [r["file"] for r in document["files"]] == sorted(rows)
     for name in ("nodes-15.mmd", "edges-21.mmd"):
         assert rows[name]["nodes"] is None
@@ -186,8 +182,8 @@ def test_check_flags_a_multi_line_quoted_node_label_over_budget(
     assert wrapped != text
     (tmp_path / "wrapped.mmd").write_bytes(wrapped.encode("ascii"))
     assert main(["check", str(tmp_path), "--json"]) == EXIT_FINDINGS
-    rows = _rows(_json(capsys)[0])
-    assert _codes(rows["wrapped.mmd"]) == [CODE_BUDGET_NODE_LABEL]
+    rows = rows_by_file(_json(capsys)[0])
+    assert finding_codes(rows["wrapped.mmd"]) == [CODE_BUDGET_NODE_LABEL]
     assert f"{2 * len(half) + 1} chars" in rows["wrapped.mmd"]["findings"][0]["message"]
 
 
@@ -213,9 +209,9 @@ def test_check_render_names_node_and_edge_budget(
     _use_renderer(monkeypatch, fake)
     assert main(["check", "--render", str(OVER), "--json"]) == EXIT_FINDINGS
     document, err = _json(capsys)
-    rows = _rows(document)
-    assert _codes(rows["nodes-15.mmd"]) == [CODE_BUDGET_NODES]
-    assert _codes(rows["edges-21.mmd"]) == [CODE_BUDGET_EDGES]
+    rows = rows_by_file(document)
+    assert finding_codes(rows["nodes-15.mmd"]) == [CODE_BUDGET_NODES]
+    assert finding_codes(rows["edges-21.mmd"]) == [CODE_BUDGET_EDGES]
     assert (rows["nodes-15.mmd"]["nodes"], rows["edges-21.mmd"]["edges"]) == (15, 21)
     assert document["summary"]["rendered"] is True
     assert COUNTS_NOTE not in err
@@ -253,7 +249,7 @@ def test_check_bad_headers_exits_1_naming_every_fixture(
 ) -> None:
     assert main(["check", str(BAD_HEADERS), "--json"]) == EXIT_FINDINGS
     document, _ = _json(capsys)
-    assert {row["file"]: _codes(row) for row in document["files"]} == BAD_HEADER_CODES
+    assert {row["file"]: finding_codes(row) for row in document["files"]} == BAD_HEADER_CODES
     failing = {name for name, codes in BAD_HEADER_CODES.items() if codes}
     assert {row["file"] for row in document["files"] if not row["pass"]} == failing
     assert document["summary"]["failed"] == len(failing)
@@ -268,8 +264,8 @@ def test_check_bad_headers_tmp_copy_fails_absolute_path(
     fixture = copy / "absolute-path.mmd"
     fixture.write_bytes(fixture.read_bytes().replace(b"<drive>", DRIVE.encode("ascii")))
     assert main(["check", str(copy), "--json"]) == EXIT_FINDINGS
-    rows = _rows(_json(capsys)[0])
-    assert _codes(rows["absolute-path.mmd"]) == [CODE_ABS_PATH]
+    rows = rows_by_file(_json(capsys)[0])
+    assert finding_codes(rows["absolute-path.mmd"]) == [CODE_ABS_PATH]
 
 
 def test_check_empty_dir_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -421,11 +417,11 @@ def test_check_excalidraw_orphan_fails(tmp_path: Path, capsys: pytest.CaptureFix
     (tmp_path / "minimal.excalidraw.svg").write_bytes(b"<svg/>")
     (tmp_path / "ghost.excalidraw.svg").write_bytes(b"<svg/>")
     assert main(["check", str(tmp_path), "--json"]) == EXIT_FINDINGS
-    rows = _rows(_json(capsys)[0])
+    rows = rows_by_file(_json(capsys)[0])
     assert set(rows) == {"minimal.mmd", "ghost.excalidraw.svg"}
     assert rows["minimal.mmd"]["pass"] is True
     assert rows["ghost.excalidraw.svg"]["id"] == "ghost"
-    assert _codes(rows["ghost.excalidraw.svg"]) == [CODE_EXCALIDRAW_ORPHAN]
+    assert finding_codes(rows["ghost.excalidraw.svg"]) == [CODE_EXCALIDRAW_ORPHAN]
 
 
 def test_check_default_target_missing_exits_2(

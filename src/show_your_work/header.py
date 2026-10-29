@@ -16,12 +16,15 @@ A diagram opens with a block of mermaid ``%%`` comment lines:
 * the header ends at the first non-``%%``, non-blank line. CRLF is normalised to LF first.
 
 ``parse_header`` raises :class:`HeaderError` carrying every finding; ``check_header`` returns the
-error instead of raising. Every field name, bound, regex and finding code comes from
-:mod:`show_your_work.constants`.
+error instead of raising. :func:`sha256_lf` is the SHA-256 of the source with CRLF turned into LF,
+shared by ``render`` and the layout sidecar check, and :func:`clip_detail` the one-line message
+clipper shared by ``checks`` and ``layout``. Every field name, bound, regex and finding code comes
+from :mod:`show_your_work.constants`.
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
@@ -58,8 +61,10 @@ __all__ = [
     "HeaderError",
     "HeaderFinding",
     "check_header",
+    "clip_detail",
     "normalize_newlines",
     "parse_header",
+    "sha256_lf",
 ]
 
 
@@ -127,6 +132,24 @@ def normalize_newlines(text: str) -> str:
     UTF-8 BOM would otherwise hide the first ``%%`` line and report every field missing.
     """
     return text.removeprefix(BOM).replace("\r\n", "\n")
+
+
+def sha256_lf(raw: bytes) -> str:
+    """SHA-256 over the bytes after CRLF -> LF normalization (section 3.4).
+
+    The one hash a diagram is known by: ``workflows.json`` ``source_sha256`` and the layout
+    sidecar's ``source_sha256`` pin (Phase 2 section 2.4) both use it.
+    """
+    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def clip_detail(text: str, limit: int, empty: str) -> str:
+    """``text`` collapsed to one whitespace-joined line of at most ``limit`` characters (plus
+    ``...``); ``empty`` when nothing is left after the collapse."""
+    detail = " ".join(text.split()) or empty
+    if len(detail) > limit:
+        detail = detail[:limit] + "..."
+    return detail
 
 
 def _header_lines(text: str) -> Iterator[tuple[int, str]]:

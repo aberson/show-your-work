@@ -1,0 +1,71 @@
+{
+  "schema": "show-your-work.layout.v1",
+  "source_sha256": "b33c14cb0bff6a506f465e36586fe2c2c8c733a1aa9b4bf51354f7dae0ca90e6",
+  "alt": "Two columns, plan then build; a backorder side branch and a dashed return to shipping.",
+  "lanes": [
+    {
+      "label": "PLAN",
+      "in": 0,
+      "out": 1,
+      "nodes": [
+        {
+          "name": "Take order",
+          "sub": "from the web shop",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Check stock",
+          "sub": "every line item",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Backorder",
+          "sub": "wait for supplier",
+          "side": true,
+          "branch_label": "short"
+        }
+      ]
+    },
+    {
+      "label": "BUILD + SHIP",
+      "in": 0,
+      "out": 2,
+      "nodes": [
+        {
+          "name": "NNNNNNNNNNNNNNNNNNNNNNN",
+          "sub": "",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Pack box",
+          "sub": "weigh and label",
+          "side": false,
+          "branch_label": ""
+        },
+        {
+          "name": "Ship",
+          "sub": "",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    }
+  ],
+  "loops": [
+    {
+      "lane": 1,
+      "from": 1,
+      "to": 0
+    }
+  ],
+  "rejoin": {
+    "from_lane": 0,
+    "from_node": 2,
+    "to_lane": 1,
+    "to_node": 2,
+    "label": "stock arrives"
+  }
+}

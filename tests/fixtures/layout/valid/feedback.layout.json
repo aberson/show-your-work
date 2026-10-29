@@ -1,0 +1,67 @@
+{
+  "schema": "show-your-work.layout.v1",
+  "source_sha256": "9d43dd9a3704fbe2434baa8901211c2544a438668d71664f7daa3ece3110c088",
+  "alt": "Four columns from idea to playtest; a dashed return carries playtest notes back to the idea.",
+  "lanes": [
+    {
+      "label": "IDEA",
+      "in": 0,
+      "out": 0,
+      "nodes": [
+        {
+          "name": "Idea",
+          "sub": "one sentence",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    },
+    {
+      "label": "PROTOTYPE",
+      "in": 0,
+      "out": 0,
+      "nodes": [
+        {
+          "name": "Prototype",
+          "sub": "paper first",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    },
+    {
+      "label": "BUILD",
+      "in": 0,
+      "out": 0,
+      "nodes": [
+        {
+          "name": "Build",
+          "sub": "",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    },
+    {
+      "label": "PLAYTEST",
+      "in": 0,
+      "out": 0,
+      "nodes": [
+        {
+          "name": "Playtest",
+          "sub": "five players",
+          "side": false,
+          "branch_label": ""
+        }
+      ]
+    }
+  ],
+  "loops": [],
+  "rejoin": {
+    "from_lane": 3,
+    "from_node": 0,
+    "to_lane": 0,
+    "to_node": 0,
+    "label": "notes"
+  }
+}

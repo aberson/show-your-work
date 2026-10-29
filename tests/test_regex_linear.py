@@ -106,6 +106,7 @@ def test_discovery_finds_every_known_pattern() -> None:
         "BLOCK_START_RE",
         "INDENTED_CODE_RE",
         "INLINE_LINK_RE",
+        "LANE_LABEL_RE",
     }
     assert expected <= names
 

@@ -18,7 +18,15 @@ from pathlib import Path
 import pytest
 
 from show_your_work import checks, renderer
-from show_your_work.checks import FileResult, GateError, Report, check_dir, check_source
+from show_your_work.checks import (
+    FileResult,
+    GateError,
+    Report,
+    check_dir,
+    check_source,
+    discover,
+    discover_layouts,
+)
 from show_your_work.constants import (
     CODE_ABS_PATH,
     CODE_BUDGET_EDGE_LABEL,
@@ -377,6 +385,27 @@ def test_discovery_is_top_level_only(tmp_path: Path) -> None:
     report = check_dir(tmp_path)
     assert [r.file for r in report.files] == ["minimal.mmd"]
     assert report.exit_code == EXIT_OK
+
+
+def test_discover_keeps_its_two_tuple_and_ignores_sidecars(tmp_path: Path) -> None:
+    """Section 2.4: sidecars come from ``discover_layouts``; ``discover``'s shape is unchanged."""
+    _write(tmp_path / "flow.mmd", _diagram())
+    _write(tmp_path / "flow.excalidraw.svg", "<svg/>")
+    _write(tmp_path / "flow.layout.json", "{}")
+    sources, drawings = discover(tmp_path)
+    assert [p.name for p in sources] == ["flow.mmd"]
+    assert [p.name for p in drawings] == ["flow.excalidraw.svg"]
+
+
+def test_discover_layouts_lists_top_level_regular_sidecars(tmp_path: Path) -> None:
+    _write(tmp_path / "b.layout.json", "{}")
+    _write(tmp_path / "a.layout.json", "{}")
+    _write(tmp_path / "a.mmd", _diagram())
+    _write(tmp_path / "a.layout.txt", "{}")
+    (tmp_path / "dir.layout.json").mkdir()
+    (tmp_path / "rasters").mkdir()
+    _write(tmp_path / "rasters" / "c.layout.json", "{}")
+    assert [p.name for p in discover_layouts(tmp_path)] == ["a.layout.json", "b.layout.json"]
 
 
 def test_non_ascii_file_is_flagged_with_its_line(tmp_path: Path) -> None:
