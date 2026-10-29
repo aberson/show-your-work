@@ -1,6 +1,6 @@
 # show-your-work
 
-**Phases 1 and 2 built** — issues #2–8 and #13–15 closed, Step 11 (#16) adds the docs. `init`, `check`, `render` and `render --png` shipped, plus house-style layout sidecars, all dogfooded on this repo's own `docs/workflows/`. 461 tests passing, 0 type errors, 0 lint violations.
+**Phase 2 complete** — issues #13–16 closed. Opt-in `<id>.layout.json` sidecars: validated by `check`, drawn as light/dark house-style SVGs by every `render` and embedded in README, rasterized by `render --png` with bundled DejaVu Sans Mono; dogfooded on this repo's own `docs/workflows/` (Phase 1: issues #2–8). 461 tests passing, 0 type errors, 0 lint violations.
 
 ## Description
 

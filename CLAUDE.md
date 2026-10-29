@@ -64,12 +64,12 @@ Exit codes: 0 pass, 1 findings or stale, 2 gate could not run, 64 usage.
 
 Phase 1 complete — automated Steps 1-7 built (2026-10-24; issues #2-#8 closed): `init` / `check` / `render` (+ `--render`, `--png`), templates, dogfooded `docs/workflows/`, README and standard conformance. Operator handoff in plan order: M1 "Migrate `dev/docs/workflows/` to the standard" (`docs/migration-coding-root.md`), then M2 "File the dev-observatory plan amendment" (`docs/observatory-amendment.md`).
 
-Phase 2 (house-style layout output, plan "Phase 2") — Steps 8-10 DONE (2026-10-29; issues #13-#15): the layout sidecar contract in `check`, the house SVG engine written by every `render` and embedded in README via `<picture>`, and house PNGs through `resvg_py` with the bundled fonts. Step 11 (#16) amends the contract text, documents the sidecar in README and dogfoods it (461 tests). Next is Manual M3 (#17): consumer acceptance in the project that reported the defect.
+Phase 2 complete — house-style layout output, automated Steps 8-11 built (2026-10-29; issues #13-#16 closed, 461 tests): the layout sidecar contract in `check`, the house SVG engine written by every `render` and embedded in README via `<picture>`, house PNGs through `resvg_py` with the bundled fonts, and the contract/README/dogfood update. Operator handoff: Manual M3 (#17), consumer acceptance in the project that reported the defect; M1 (#9) and M2 (#10) are still open from Phase 1.
 
 ## Environment
 
-Windows 11 + PowerShell; Python 3.12+ via uv. No network, secrets or services. `mermaidx` only when
-the `render` extra is installed. Raster hashes are not guaranteed across machines or renderer
+Windows 11 + PowerShell; Python 3.12+ via uv. No network, secrets or services. `mermaidx` and `resvg-py`
+only when the `render` extra is installed. Raster hashes are not guaranteed across machines or renderer
 versions (plan risk: host fonts); mermaidx 0.9.5 was observed to skip system fonts and use its
 bundled font, but cross-machine stability is unverified. House PNGs draw only with the bundled
 DejaVu fonts. `render --check` ignores raster hashes unless `--png`.
@@ -80,3 +80,5 @@ DejaVu fonts. `render --check` ignores raster hashes unless `--png`.
 - `workflows.json` is this tool's index (`show-your-work.workflows.v1`), not the Observatory
   `devobs.workflows.v1` envelope; dev-observatory owns that mapping.
 - The coding root `dev/docs/workflows/` is a different git repo; its migration is manual step M1.
+- Generated house SVGs in `docs/workflows/rasters/*.svg` are committed and LF-pinned in
+  `.gitattributes` (byte-exact for `render --check`); PNGs are never committed.

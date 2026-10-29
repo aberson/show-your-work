@@ -62,7 +62,7 @@ Field-by-field, what the mapping step reads from `show-your-work.workflows.v1`:
 | `items[].id` | the `.mmd` stem, matching `^[a-z0-9][a-z0-9-]{0,63}$` | item id; re-check the grammar defensively |
 | `items[].label` | the header title verbatim (<= 120 chars) | display label |
 | `items[].summary` | the `Summary:` field (<= 160 chars) | display summary |
-| `items[].alt` | the `Alt:` field (<= 240 ASCII chars) | the image's text alternative |
+| `items[].alt` | the `Alt:` field (<= 240 ASCII chars); for a diagram with a layout sidecar whose `rasters` are house-style entries, the sidecar's `alt` instead (falls back to the header `Alt:` whenever `rasters` is `null`) | the image's text alternative |
 | `items[].not_shown` | the `Not shown:` field (<= 400 chars) | optional display; may be omitted |
 | `items[].sources` | list of repo-relative paths or URLs | optional display; never opened |
 | `items[].source_path` | `<source_dir>/<id>.mmd` | display-only provenance; never opened |

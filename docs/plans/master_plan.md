@@ -518,6 +518,7 @@ and 11 also `--extra render`). The DONE gate for each step runs the FULL suite:
 ### Step M1: Migrate `dev/docs/workflows/` to the standard (coding root becomes the first consumer)
 - **Source step:** Step 5
 - **Issue:** #9
+- **Note (2026-10-29):** the coding root's `docs/workflows/` now also holds three untracked `.mmd` files that already carry `Alt:` lines; the counts below (`7/7`, 7 items) assume the seven tracked diagrams. Decide whether M1 also adopts the untracked ones before running it.
 - **Commands:**
   Run in: this window @ `dev` · Model: n/a (operator action)
   ```powershell
@@ -609,7 +610,7 @@ Please run M1 next (after `/build-phase` completes).
 
 ## Phase 2 — house-style layout output (Steps 8-11)
 
-State: REVIEW-READY (planned 2026-10-28; revised after two plan-reviews and an approved plan-redline the same day; Manual M3 follows the build). Origin: walkthrough
+State: BUILT (automated Steps 8-11 DONE 2026-10-29, issues #13-#16 closed; planned 2026-10-28 after two plan-reviews and an approved plan-redline; Manual M3 (#17) is the operator handoff). Origin: walkthrough
 ledger (2026-10-28) item W-D9. Decisions P7-P13 and D20-D31 are appended to section 12.D.
 
 ### 2.1 What this phase does
@@ -875,6 +876,41 @@ consumer. Commands (from `CLAUDE.md`): `uv sync --extra dev --extra render`, `uv
 compatibility - `workflows.json` v1 unchanged and sidecar-less folders byte-identical except the P12 provenance null (Steps 8-10);
 producer/consumer seam - Step 11 real-CLI run, then M3; not autonomous or scheduled (one-shot CLI);
 no deployment seam.
+
+---
+
+## Phase 2 build summary — house-style layout output (automated Steps 8-11)
+
+**All 4 automated-step issues closed (#13-#16). 461/461 tests passing (8 skipped: Windows symlink privilege; the wheel test runs). Zero type errors. Zero lint violations.** Manual M3 (#17) remains an operator handoff, as do Phase 1's M1 (#9) and M2 (#10).
+
+### What was built
+
+- `check` validates top-level `<id>.layout.json` sidecars against section 2.4: `layout-invalid` / `layout-bound` / `layout-stale` / `layout-orphan`, 64 KiB and symlink exit-2 gates, integer tokens over 6 digits rejected at parse time; `header.sha256_lf` is the one CRLF->LF source hash
+- Every `render` draws `rasters/<id>-{light,dark}.svg` per section 2.5 (stdlib engine, per-theme palettes, generator marker as the first child), embeds them in README with the `<picture>` template, deletes only marked orphan house SVGs (last), and `render --check` treats them as generated outputs (CRLF-tolerant)
+- `render --png` rasterizes house SVGs through `resvg-py==0.5.0` with the bundled DejaVu Sans Mono fonts (pinned SHA-256s, licence shipped in the wheel) on the card background, tags house PNGs with a `tEXt` marker after IHDR, and applies the house/mermaid provenance rule and the layout-alt rule to `workflows.json`
+- Contract text (sections 3.1, 3.4, 3.6, 4, 5, 7, 11), README "Layout sidecar" section, CLI help, and a dogfooded `docs/workflows/example-workflow` sidecar with committed LF-pinned house SVGs
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/show_your_work/layout.py` (new) | Sidecar parse/validation and the house SVG engine `draw_svg` |
+| `src/show_your_work/{checks,render,renderer,constants,header,cli,scaffold,__init__}.py` | Sidecar discovery/findings, house SVG/README/index paths, `house_png` + anchors + tEXt tagging, constants (PACKAGE moved here from `scaffold.py`), `sha256_lf`, `--png` help |
+| `src/show_your_work/fonts/` (new) | DejaVu Sans Mono + Bold TTFs and `LICENSE-DejaVu.txt` |
+| `pyproject.toml`, `uv.lock`, `.gitattributes` | `resvg-py==0.5.0` in extra `render`; font and fixture/SVG LF/binary pins |
+| `tests/test_layout.py`, `tests/test_layout_svg.py` (new), `tests/{test_checks,test_render,test_png,test_scaffold,test_cli,test_live_coding_root,test_regex_linear,fakes}.py`, `tests/fixtures/layout/` (new) | Suite 284 -> 461 tests; shared helpers in `fakes.py`; Phase 1 byte-identity goldens |
+| `docs/workflows/` | `example-workflow.layout.json`, `rasters/example-workflow-{light,dark}.svg`, regenerated README |
+| `README.md`, `CLAUDE.md`, this plan | Layout sidecar docs; contract updates |
+
+### Fresh context notes for Phase 2
+
+| Issue | Detail |
+|---|---|
+| Style-lens waivers | Steps 8-10 were accepted by the operator after their review budgets ran out with only review-deep style Nits open (all other lenses PASS); each Step's Status line names the waived Nit. |
+| Step 9 Done-when wording | Corrected at build time to require the exact section 2.5 marker/Regenerating sentences (the earlier literal `rasters/*.svg` contradicted section 2.5). |
+| Mermaid anchors under `--png` | The raster-path mermaid anchors run only for a sidecar-less diagram, but the check phase still runs its mermaid anchor on every `--png` (mermaidx stays required). |
+| Fonts must stay byte-exact | `.gitattributes` marks the TTFs `binary` and the licence `-text`; on autocrlf checkouts a converted licence fails the pinned-hash and wheel tests. |
+| Possible follow-up test | Nothing yet runs `check` / `render --check` on the dogfooded `docs/workflows` in the suite (verified by hand at Step 11). |
 
 ## 12. Appendix
 
